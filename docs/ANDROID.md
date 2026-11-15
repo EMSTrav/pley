@@ -765,11 +765,26 @@ or E-AC3 sound the server converts, where the device decodes it or sends it
 to its receiver as it is (Diagnostics lists both); anything else
 plays the server's HLS. Taking over a connection, it reads `stream.ts` only once
 the watch has answered, as only the watch takes the connection. Leaving
-the player ends the session. A page of channels that didn't load is asked
-for again once 10 s have passed, as the list moves. When the player fails,
+the player ends the session, unless it goes into picture in picture
+(below). A page of channels that didn't load is asked for again once
+10 s have passed, as the list moves. When the player fails,
 the channel is tuned again twice, after 1 s and then 3 s, before the player
 says why; not when the server refused it (every connection in use, the
 channel stopped, gone or not allowed). Try again starts the count again.
+Live TV has no pause, so another app's sound, a call's included, quiets
+the channel instead: its sound comes back once the other app is done, or,
+after music or a video, which take the sound for good, with the next
+channel tuned.
+
+On phones and tablets the live player goes into picture in picture as
+the video player does: by itself when you leave it while a channel plays
+or tunes (Android 12 and later; Home on older versions), or with the
+picture in picture button in its bar. The small window shows the picture
+alone (the channel's logo while it tunes or for a radio channel, why it
+doesn't play when it fails) with Channel down and Channel up as its
+buttons, and keeps the session. Closing it ends the session and the
+player. The screen turning off lets the session go too, and the channel
+is tuned again in the small window once the screen is back on.
 
 On TVs, OK in the player opens the channel list, as Menu and Guide do;
 holding OK shows the controls (the channel list and the favourite's star) over
@@ -1292,8 +1307,7 @@ base64 -w0 pley-release.keystore   # the ANDROID_KEYSTORE_BASE64 secret
 
 - Downloads are on phones and tablets only; TVs stream everything.
 - No Watch Next row on phones or Fire TV.
-- Live TV has no picture in picture, and the TV's display mode isn't
-  matched for live channels.
+- The TV's display mode isn't matched for live channels.
 - Videos on a USB drive are on TVs only. Their display mode isn't
   matched, as their frame rate is known only once they play; HDR10+ shows
   as HDR10 in the player's details; M2TS and MTS files aren't listed, as
