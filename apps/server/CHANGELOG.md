@@ -25,6 +25,8 @@ describes how they are made.
 - The dashboard says what plays each session: a Pley app, an app through
   the Plex or Jellyfin API, Google Cast or AirPlay. Stopping one offers a
   message only for Pley apps, the only ones that show it.
+- Live TV goes into the browser's picture in picture, as videos do; next
+  and previous, in its small window or on the keyboard, change channel.
 
 ### Changed
 
