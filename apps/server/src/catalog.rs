@@ -1812,8 +1812,13 @@ pub async fn continue_listening(
     limit: i64,
 ) -> sqlx::Result<Vec<ItemRow>> {
     let scope = if library_id.is_some() { "AND i.library_id = ?" } else { "" };
+    // The books with a part heard first, from the user's own state: the
+    // rest is asked of those alone, not of every book on each Home.
     let sql = format!(
         "{SUMMARY_SELECT} WHERE {VISIBLE} AND i.kind = 'audiobook' {scope}
+           AND i.id IN (SELECT p.parent_id FROM user_item_state ps JOIN items p ON p.id = ps.item_id
+                        WHERE ps.user_id = (SELECT uid FROM me) AND p.kind = 'part'
+                          AND (ps.position_ms > 0 OR ps.watched = 1))
            AND (EXISTS (SELECT 1 FROM items p JOIN user_item_state ps ON ps.item_id = p.id
                         WHERE p.parent_id = i.id AND ps.user_id = (SELECT uid FROM me) AND ps.position_ms > 0)
                 OR (EXISTS (SELECT 1 FROM items p JOIN user_item_state ps ON ps.item_id = p.id
