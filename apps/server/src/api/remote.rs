@@ -1024,14 +1024,18 @@ const WITH_TRACKS: [&str; 2] = ["movie", "episode"];
 const CASTABLE: [&str; 7] = ["movie", "episode", "show", "season", "track", "album", "artist"];
 
 /// The device on the server's network of `id`, as the household's lists
-/// show it: to a home member only, as [`reaches_nearby`] says.
+/// show it: to a home member only, as [`reaches_nearby`] says. One the
+/// remote listed longer ago than the server keeps devices is looked for
+/// again; no one else makes the server look.
 async fn nearby_device(state: &AppState, user: &AuthUser, id: &str) -> ApiResult<crate::nearby::Found> {
     let everyone = crate::accounts::users(&state.db).await?;
     let home = everyone.iter().any(|u| u.id == user.id && u.home);
+    let unknown = || AppError::not_found("no such device");
+    if !reaches_nearby(user, home) {
+        return Err(unknown());
+    }
     let discovery = state.network.wanted().discovery;
-    let device =
-        state.nearby.device(id, state.config.cast_fixed.found(), discovery).filter(|_| reaches_nearby(user, home));
-    device.ok_or_else(|| AppError::not_found("no such device"))
+    state.nearby.device(id, state.config.cast_fixed.found(), discovery).await.ok_or_else(unknown)
 }
 
 #[derive(Debug, Deserialize)]
