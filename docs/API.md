@@ -1954,9 +1954,11 @@ WebVTT file named `.srt` is taken as WebVTT). Its language is kept as ISO
   title starting with each word of `q`; a year ending `q` ("alien 1979")
   keeps the titles of that year (or one either side), unless none has the
   other words, when it is a word of the title ("blade runner 2049"). When
-  more match than `limit`, the closest are kept, movies, shows and artists
-  before their seasons, episodes, albums and tracks among equals, and they
-  come by kind: movies, shows, seasons, episodes, artists, albums, tracks.
+  more match than `limit`, the closest are kept, movies, shows, artists and
+  audiobooks before their seasons, episodes, albums and tracks among
+  equals, and they come by kind: movies, shows, seasons, episodes, artists,
+  albums, tracks, audiobooks. An audiobook's parts are never found: they
+  are its files, and one of a book in one file has the book's title.
   People have words starting with each word of `q`, the most credited
   first among equals. Channels match by name (its words in any order: "f1
   sports" finds "UK| SPORTS F1"; a quality such as "hd" that no channel

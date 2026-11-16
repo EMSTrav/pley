@@ -1,7 +1,8 @@
 //! Who gets audiobooks, and what is made of them: the web and desktop apps
 //! do, other apps (their tokens) don't, neither the libraries nor their
 //! books on Home, in search or in history, and still order the libraries
-//! they get. Collections and smart playlists aren't made of books.
+//! they get. Collections and smart playlists aren't made of books, and
+//! search finds a book and not its files.
 
 mod common;
 
@@ -222,4 +223,22 @@ async fn collections_and_smart_playlists_refuse_audiobook_libraries() {
     let library = w.app.jf_library(w.books);
     let jf = w.app.jf(Method::POST, &format!("/Collections?name=Picks&parentId={library}"), &manager, None).await;
     assert_eq!(jf.status, StatusCode::BAD_REQUEST, "{}", jf.text());
+}
+
+/// Search finds a book by its title, once, and not its parts: a book in
+/// one file has a part of the same title, and a part's own title finds
+/// nothing.
+#[tokio::test]
+async fn search_finds_books_not_their_parts() {
+    let w = shelf().await;
+    let r = w.app.get(&format!("/api/search?q={}", encode("Short Book")), &w.admin).await;
+    let found: Vec<(&str, &str)> = r.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["title"].as_str().unwrap(), i["kind"].as_str().unwrap()))
+        .collect();
+    assert_eq!(found, [("Short Book", "audiobook")]);
+    assert!(search(&w.app, &w.admin, "Opening").await.is_empty());
+    assert!(search(&w.app, &w.admin, "Closng").await.is_empty(), "nor alike");
 }
