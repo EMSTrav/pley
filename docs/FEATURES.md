@@ -22,7 +22,8 @@ What Pley does, in full. The [README](../README.md) has the short version.
 
 ### Audiobooks
 
-Audiobook libraries are in the server's API; the apps don't show them yet.
+Audiobook libraries are in the web and desktop apps; the other apps don't
+show them yet.
 
 - A book is an `.m4b` file, or a folder of audio files (with `CD 1`,
   `Disc 2`… folders inside it if it has them). Folders are read as
@@ -42,9 +43,14 @@ Audiobook libraries are in the server's API; the apps don't show them yet.
   is finished only in its last 30 seconds, not at 90 % as a film is.
   Books part way through are in Continue Listening, on Home and in their
   library.
-- Not yet: metadata from an online source, authors' and narrators' pages,
-  series as collections, downloads, and a place in the Plex- and
-  Jellyfin-compatible APIs, which leave audiobook libraries out.
+- A book's page has its writers, narrators and series, how much is left,
+  and its parts, or the chapters of a book in one file, each played from
+  where it starts. The player goes back 15 seconds and on 30, plays from
+  0.75× to 3× (kept for every book), and has a sleep timer: 15 to 60
+  minutes, or the end of the chapter or part.
+- Not yet: the other apps, metadata from an online source, authors' and
+  narrators' pages, series as collections, downloads, and a place in the
+  Plex- and Jellyfin-compatible APIs, which leave audiobook libraries out.
 
 ## Metadata
 

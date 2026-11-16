@@ -13,13 +13,13 @@ import { cn } from "@/lib/cn";
 import { dynamicRangeBadges, formatRemaining, progressFraction } from "@/lib/format";
 import { backdropCandidates, posterCandidates, thumbCandidates } from "@/lib/images";
 
-/** A section of an item's page (its seasons, episodes, albums, tracks) that couldn't load, with Retry. */
+/** A section of an item's page (its seasons, episodes, albums, tracks, parts) that couldn't load, with Retry. */
 export function SectionError({
   what,
   error,
   retry,
 }: {
-  what: "albums" | "tracks" | "seasons" | "episodes";
+  what: "albums" | "tracks" | "seasons" | "episodes" | "parts";
   error: unknown;
   retry: () => void;
 }) {
@@ -191,7 +191,7 @@ export function WatchedButton({ item, compact }: { item: ItemSummary; compact?: 
   const { t } = useTranslation("item");
   const setWatched = useSetWatched();
   const toast = useToast();
-  const isContainer = item.kind === "show" || item.kind === "season";
+  const isContainer = item.kind === "show" || item.kind === "season" || item.kind === "audiobook";
   const watched = isContainer
     ? item.leaf_count != null && item.leaf_count > 0 && (item.viewed_leaf_count ?? 0) >= item.leaf_count
     : item.user_state.watched;

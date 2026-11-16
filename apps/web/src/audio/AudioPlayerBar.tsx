@@ -6,6 +6,8 @@ import {
   LoaderCircle,
   Pause,
   Play,
+  RotateCcw,
+  RotateCw,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -22,6 +24,32 @@ import { formatClock, formatDuration } from "@/lib/format";
 import { useDismiss } from "@/lib/hooks";
 import { posterCandidates } from "@/lib/images";
 import { useAudioPlayer, useAudioTime } from "./AudioPlayer";
+import { BookChapters, SleepMenu, SpeedMenu, usePartChapters } from "./BookControls";
+
+/** An audiobook's skips, back and forward, in seconds. */
+const BOOK_BACK = 15;
+const BOOK_FORWARD = 30;
+
+/** Back or forward by `seconds`, the number on the arrow. */
+function SkipButton({ seconds }: { seconds: number }) {
+  const { t } = useTranslation("player");
+  const player = useAudioPlayer();
+  const back = seconds < 0;
+  const Icon = back ? RotateCcw : RotateCw;
+  const amount = Math.abs(seconds);
+  return (
+    <IconButton
+      label={back ? t("book.back", { count: amount }) : t("book.forward", { count: amount })}
+      size="sm"
+      onClick={() => player.skipBy(seconds)}
+    >
+      <span className="relative flex items-center justify-center">
+        <Icon className="size-5" strokeWidth={1.75} />
+        <span className="absolute text-[8px] font-bold tabular-nums">{amount}</span>
+      </span>
+    </IconButton>
+  );
+}
 import { itemUrl } from "@/lib/urls";
 
 function QueuePopover() {
@@ -67,8 +95,10 @@ export function AudioPlayerBar() {
   const { t } = useTranslation(["player", "common"]);
   const player = useAudioPlayer();
   const time = useAudioTime();
+  const chapters = usePartChapters();
   const track = player.current;
   if (!track) return null;
+  const book = player.book;
 
   const VolumeIcon = player.muted || player.volume === 0 ? VolumeX : player.volume < 0.5 ? Volume1 : Volume2;
   const albumHref = track.parent_id ? itemUrl(track.parent_id) : itemUrl(track.id);
@@ -99,18 +129,24 @@ export function AudioPlayerBar() {
 
         <div className="flex flex-1 flex-col items-center justify-center gap-0.5 md:max-w-2xl">
           <div className="flex items-center gap-1 sm:gap-2">
-            <IconButton
-              label={player.shuffle ? t("music.shuffleOn") : t("music.shuffleOff")}
-              size="sm"
-              active={player.shuffle}
-              onClick={player.toggleShuffle}
-              className="hidden sm:inline-flex"
-            >
-              <Shuffle className="size-4" />
-            </IconButton>
-            <IconButton label={t("common:actions.previous")} size="sm" onClick={player.prev} className="hidden sm:inline-flex">
-              <SkipBack className="size-4 fill-current" />
-            </IconButton>
+            {book ? (
+              <SkipButton seconds={-BOOK_BACK} />
+            ) : (
+              <>
+                <IconButton
+                  label={player.shuffle ? t("music.shuffleOn") : t("music.shuffleOff")}
+                  size="sm"
+                  active={player.shuffle}
+                  onClick={player.toggleShuffle}
+                  className="hidden sm:inline-flex"
+                >
+                  <Shuffle className="size-4" />
+                </IconButton>
+                <IconButton label={t("common:actions.previous")} size="sm" onClick={player.prev} className="hidden sm:inline-flex">
+                  <SkipBack className="size-4 fill-current" />
+                </IconButton>
+              </>
+            )}
             <button
               type="button"
               aria-label={player.playing ? t("controls.pause") : t("common:actions.play")}
@@ -125,14 +161,18 @@ export function AudioPlayerBar() {
                 <Play className="ml-0.5 size-5 fill-current" />
               )}
             </button>
-            <IconButton
-              label={t("common:actions.next")}
-              size="sm"
-              onClick={player.next}
-              disabled={player.index >= player.queue.length - 1}
-            >
-              <SkipForward className="size-4 fill-current" />
-            </IconButton>
+            {book ? (
+              <SkipButton seconds={BOOK_FORWARD} />
+            ) : (
+              <IconButton
+                label={t("common:actions.next")}
+                size="sm"
+                onClick={player.next}
+                disabled={player.index >= player.queue.length - 1}
+              >
+                <SkipForward className="size-4 fill-current" />
+              </IconButton>
+            )}
           </div>
           <div className="hidden w-full items-center gap-2.5 md:flex">
             <span className="w-11 text-right text-[11px] tabular-nums text-subtle">{formatClock(time.position)}</span>
@@ -149,7 +189,14 @@ export function AudioPlayerBar() {
         </div>
 
         <div className="hidden items-center justify-end gap-1 md:flex md:w-64 lg:w-72">
-          <QueuePopover />
+          {book ? (
+            <>
+              <SpeedMenu />
+              <SleepMenu chapters={chapters} />
+              <BookChapters chapters={chapters} />
+            </>
+          ) : null}
+          {book && player.queue.length < 2 ? null : <QueuePopover />}
           <IconButton label={player.muted ? t("controls.unmute") : t("controls.mute")} size="sm" onClick={player.toggleMute}>
             <VolumeIcon className="size-4" />
           </IconButton>
