@@ -37,6 +37,52 @@ async fn shelf() -> Shelf {
     Shelf { app, admin, films, books, docs }
 }
 
+/// An app's event stream hears of a library made after it opened at once,
+/// as on a server without audiobooks, and never of an audiobook library's
+/// scans.
+#[tokio::test]
+async fn an_apps_events_follow_new_libraries_but_not_audiobooks() {
+    use futures::StreamExt;
+
+    let w = shelf().await;
+    let (token, _) = w.app.app_token(1, "library").await;
+    let request = axum::http::Request::builder()
+        .uri("/api/events")
+        .header("authorization", format!("Bearer {token}"))
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let response = tower::ServiceExt::oneshot(w.app.api.clone(), request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut stream = response.into_body().into_data_stream();
+
+    let r = w.app.post(&format!("/api/libraries/{}/scan", w.books), &w.admin, json!({"force": true})).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED);
+    w.app.wait_for_scans().await;
+    w.app.media_file("more/Second Film (2002)/Second Film (2002).mkv", 2048);
+    let more = w.app.library(&w.admin, "More", "movies", "more").await;
+
+    let mut events: Vec<Value> = Vec::new();
+    let mut pending = String::new();
+    let read = async {
+        while let Some(chunk) = stream.next().await {
+            pending.push_str(&String::from_utf8_lossy(&chunk.unwrap()));
+            while let Some(end) = pending.find("\n\n") {
+                let frame: String = pending.drain(..end + 2).collect();
+                for line in frame.lines() {
+                    if let Some(data) = line.strip_prefix("data:") {
+                        events.push(serde_json::from_str(data.trim()).unwrap());
+                    }
+                }
+            }
+            if events.iter().any(|e| e["type"] == "scan_finished" && e["library_id"] == more) {
+                return;
+            }
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), read).await.expect("the new library's scan_finished");
+    assert!(!events.iter().any(|e| e["library_id"] == w.books), "{events:?}");
+}
+
 /// The smallest JPEG Pley's image code reads: one white pixel.
 fn tiny_jpeg() -> Vec<u8> {
     let mut out = Vec::new();

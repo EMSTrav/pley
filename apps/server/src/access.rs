@@ -66,6 +66,14 @@ pub async fn library_ids(db: &Db, user: &AuthUser) -> sqlx::Result<Option<Vec<i6
     Ok(Some(open.into_iter().filter(|id| !withheld.contains(id)).collect()))
 }
 
+/// The libraries whose events a request hears: those the account may open
+/// (`None`: all of them), less those it doesn't get. Kept apart, unlike
+/// [`library_ids`], so that an event stream hears of a library added after
+/// it last looked at once, as it does on a server without audiobooks.
+pub async fn heard_libraries(db: &Db, user: &AuthUser) -> sqlx::Result<(Option<Vec<i64>>, Vec<i64>)> {
+    Ok((account_library_ids(db, user).await?, withheld(&db.read, user).await?))
+}
+
 /// Libraries the request doesn't get, whatever the account may open:
 /// audiobook libraries, unless it gets audiobooks.
 async fn withheld<'e, E: sqlx::SqliteExecutor<'e>>(db: E, user: &AuthUser) -> sqlx::Result<Vec<i64>> {
