@@ -86,12 +86,10 @@ pub fn routes() -> Router<AppState> {
 /// The most items a page has: clients asking for more get this many.
 const MAX_LIMIT: usize = 1000;
 
-/// Libraries the user can see. Audiobooks aren't among them yet: the API
-/// has no audiobook items to give Jellyfin's apps.
+/// Libraries the user can see. Audiobooks aren't among them: the API has
+/// no audiobook items to give Jellyfin's apps (`AuthUser::audiobooks`).
 pub async fn libraries(state: &AppState, user: &AuthUser) -> JfResult<Vec<LibraryRow>> {
-    let mut libraries = crate::access::visible_libraries(&state.db, user).await?;
-    libraries.retain(|lib| lib.kind() != crate::library::LibraryKind::Audiobooks);
-    Ok(libraries)
+    Ok(crate::access::visible_libraries(&state.db, user).await?)
 }
 
 /// A user id in a path must be the caller's: tokens see only their own.

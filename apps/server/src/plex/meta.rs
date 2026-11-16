@@ -38,7 +38,7 @@ pub fn section_type(lib: &LibraryRow) -> &'static str {
         crate::library::LibraryKind::Shows => "show",
         crate::library::LibraryKind::Music => "artist",
         // Plex has no audiobook sections; the API lists none (see
-        // `plex::library`).
+        // `AuthUser::audiobooks`).
         crate::library::LibraryKind::Audiobooks => "artist",
     }
 }

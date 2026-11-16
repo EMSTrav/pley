@@ -24,11 +24,9 @@ use crate::state::AppState;
 
 /// Libraries the user can see (per-user library access). Audiobooks aren't
 /// among them: Plex has no such sections, and its apps would read books as
-/// albums of tracks.
+/// albums of tracks (`AuthUser::audiobooks`).
 pub(super) async fn visible_libraries(state: &AppState, user: &AuthUser) -> PlexResult<Vec<LibraryRow>> {
-    let mut libraries = crate::access::visible_libraries(&state.db, user).await?;
-    libraries.retain(|lib| lib.kind() != crate::library::LibraryKind::Audiobooks);
-    Ok(libraries)
+    Ok(crate::access::visible_libraries(&state.db, user).await?)
 }
 
 pub(super) async fn library_for(

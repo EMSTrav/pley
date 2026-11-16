@@ -1710,6 +1710,16 @@ open only some libraries see those, in that order.
   when `ids` aren't the libraries the user may open. It and `DELETE` send
   `libraries_changed` to the user's event streams.
 
+**Audiobooks** are for Pley's own sign-in: the web app and the desktop
+app's window, which show them. A request with an app's token, an
+administrator's included, gets no audiobook library: none in
+`/api/libraries` or among Home's rows, `404` from a library's own routes,
+no `continue_listening` on Home, and no book or part in search or
+history. The orders it sends (both `PUT`s above) list the libraries it
+gets, and audiobook libraries keep their places among them. A book asked
+for by its id is answered as to anyone who may see it. The compatibility
+APIs list none ([COMPATIBILITY.md](COMPATIBILITY.md)).
+
 **`GET /api/libraries/{id}/items`** query:
 
 | Parameter | Values |
@@ -1932,7 +1942,8 @@ WebVTT file named `.srt` is taken as WebVTT). Its language is kept as ISO
 | GET | `/api/search?q=&limit=` | `library` | `{ items: ItemSummary[], people: PersonSummary[], channels: LiveChannel[] }`: `items`, `people` and `channels` each up to `limit` (default 40, 1 to 200): titles, people, and Live TV channels by name, number or what's on, for those Live TV is open to. The apps ask for 200 |
 
 - **Home** hubs, empty ones left out: `continue_watching` (in progress and
-  next up), then `continue_listening` (audiobooks part way through), then
+  next up), then `continue_listening` (audiobooks part way through; never
+  for an app's token, see [Audiobooks](#libraries)), then
   `my_list` ("My List", its 20 newest), then
   `recently_added:<library_id>` per library in the libraries' order.
 - **Search**: the closest matches first in each of `items`, `people` and
@@ -1994,7 +2005,8 @@ play a seen episode from its start), and can still be next up.
 library's hubs) holds the audiobooks the user is part way through, the
 one heard last first: a part started, or one finished and another still
 to hear. Its items are the books; `on-deck` says where each goes on. A
-finished book leaves it. Audiobooks are never in Continue Watching.
+finished book leaves it. Audiobooks are never in Continue Watching, and an
+app's token gets no Continue Listening ([Audiobooks](#libraries)).
 
 **`DELETE /api/continue-watching/{id}`** takes a movie, or for an episode
 (in progress or next up) its whole show, out of the user's Continue
@@ -3110,7 +3122,8 @@ is not a play.
 `item_id` (the item, or the episodes or tracks under it), `library_id`,
 `since` (unix seconds); administrators also `user_id=<id>` or `all=1`.
 Your own plays unless asked otherwise; entries of items you can't see are
-left out.
+left out, and for an app's token those of audiobooks
+([Audiobooks](#libraries)).
 
 ```ts
 interface HistoryEntry {

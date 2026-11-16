@@ -295,14 +295,21 @@ impl LibraryOrder {
 }
 
 /// The order libraries are listed in, for everyone who hasn't chosen their
-/// own: `ids` lists every library once. Answers them in their new order.
+/// own: `ids` lists every library once, or every one the request gets (an
+/// app's leaves out audiobook libraries, which keep their places). Answers
+/// them in their new order.
 pub async fn reorder(
     State(state): State<AppState>,
     AdminUser(admin): AdminUser,
     Json(body): Json<LibraryOrder>,
 ) -> ApiResult<Json<Vec<LibraryDto>>> {
     body.check()?;
-    if !set_order(&state.db, &body.ids).await? {
+    // Checked again as it is written: a library may come or go meanwhile.
+    let set = match access::whole_shared_order(&state.db, &admin, &body.ids).await? {
+        Some(ids) => set_order(&state.db, &ids).await?,
+        None => false,
+    };
+    if !set {
         return Err(AppError::conflict("the libraries have changed: the order must list each of them once"));
     }
     state.events.send(ServerEvent::LibrariesChanged);
@@ -311,8 +318,8 @@ pub async fn reorder(
 }
 
 /// `PUT /api/me/libraries/order`: the order the user sees their libraries
-/// in, theirs alone: `ids` lists each library they may open once. Answers
-/// them in it.
+/// in, theirs alone: `ids` lists each library they may open once (an app
+/// those it gets). Answers them in it.
 pub async fn set_my_order(
     State(state): State<AppState>,
     user: AuthUser,
