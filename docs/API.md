@@ -1631,7 +1631,8 @@ content rating allows that age:
   film and 8 on TV); others go by US ratings and the number in them;
 - seasons and episodes go by their show;
 - unrated titles are hidden;
-- music is exempt.
+- music is exempt. Audiobooks aren't, and have no rating: a book and its
+  parts are hidden.
 
 A profile's label rules make exceptions, by the labels on titles (set in
 the edit dialog, `PATCH /api/items/{id}`, or by tools such as Kometa through

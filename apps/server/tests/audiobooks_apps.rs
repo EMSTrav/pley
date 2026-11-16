@@ -1,8 +1,9 @@
 //! Who gets audiobooks, and what is made of them: the web and desktop apps
 //! do, other apps (their tokens) don't, neither the libraries nor their
 //! books on Home, in search or in history, and still order the libraries
-//! they get. Collections and smart playlists aren't made of books, and
-//! search finds a book and not its files.
+//! they get. Collections and smart playlists aren't made of books, search
+//! finds a book and not its files, and an age limit hides books, which have
+//! no rating.
 
 mod common;
 
@@ -11,8 +12,9 @@ use serde_json::{Value, json};
 
 use common::{TestApp, encode, titles};
 
-/// A library of films, one of books (a book in a folder of two parts and a
-/// book in one `.m4b` file) and an empty one, made in that order.
+/// A library of films, one of books (a book in a folder of two parts, with
+/// its cover, and a book in one `.m4b` file) and an empty one, made in that
+/// order.
 struct Shelf {
     app: TestApp,
     admin: String,
@@ -27,11 +29,21 @@ async fn shelf() -> Shelf {
     app.media_file("films/First Film (2001)/First Film (2001).mkv", 2048);
     app.media_file("books/A Writer/Long Book/01 - Opening.mp3", 512);
     app.media_file("books/A Writer/Long Book/02 - Closing.mp3", 512);
+    std::fs::write(app.media.path().join("books/A Writer/Long Book/cover.jpg"), tiny_jpeg()).unwrap();
     app.media_file("books/A Writer/Short Book.m4b", 512);
     let films = app.library(&admin, "Films", "movies", "films").await;
     let books = app.library(&admin, "Books", "audiobooks", "books").await;
     let docs = app.library(&admin, "Docs", "movies", "docs").await;
     Shelf { app, admin, films, books, docs }
+}
+
+/// The smallest JPEG Pley's image code reads: one white pixel.
+fn tiny_jpeg() -> Vec<u8> {
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new(&mut out)
+        .encode(&[255, 255, 255], 1, 1, image::ExtendedColorType::Rgb8)
+        .unwrap();
+    out
 }
 
 /// `(book, its first part, its second part)` of the book in a folder.
@@ -241,4 +253,29 @@ async fn search_finds_books_not_their_parts() {
     assert_eq!(found, [("Short Book", "audiobook")]);
     assert!(search(&w.app, &w.admin, "Opening").await.is_empty());
     assert!(search(&w.app, &w.admin, "Closng").await.is_empty(), "nor alike");
+}
+
+/// Books have no rating and, unlike music, aren't exempt from age limits:
+/// a profile with one doesn't see them. A book, its part and its cover
+/// answer `404`, and the book leaves Continue Listening and search.
+#[tokio::test]
+async fn an_age_limit_hides_books() {
+    let w = shelf().await;
+    let (book, opening, _) = long_book(&w).await;
+    let poster = format!("/api/items/{book}/images/poster");
+    assert_eq!(w.app.get(&poster, &w.admin).await.status, StatusCode::OK);
+    let (kid, kid_id) = w.app.user(&w.admin, "kid", json!({"all_libraries": true})).await;
+    progress(&w.app, &kid, opening, 600_000).await;
+    assert!(home(&w.app, &kid).await.contains(&("continue_listening".into(), vec!["Long Book".into()])));
+
+    let limited = w.app.patch(&format!("/api/users/{kid_id}"), &w.admin, json!({"max_age": 12})).await;
+    assert_eq!(limited.status, StatusCode::OK, "{:?}", limited.body);
+    for uri in [format!("/api/items/{book}"), format!("/api/items/{opening}"), poster] {
+        assert_eq!(w.app.get(&uri, &kid).await.status, StatusCode::NOT_FOUND, "{uri}");
+    }
+    let hubs = home(&w.app, &kid).await;
+    assert!(!hubs.iter().any(|(key, _)| key == "continue_listening"), "{hubs:?}");
+    let hubs = w.app.get(&format!("/api/libraries/{}/hubs", w.books), &kid).await;
+    assert_eq!(hubs.body["hubs"], json!([]), "{:?}", hubs.body);
+    assert!(search(&w.app, &kid, "book").await.is_empty());
 }
