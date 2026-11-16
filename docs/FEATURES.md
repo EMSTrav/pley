@@ -45,8 +45,10 @@ the Plex- and Jellyfin-compatible APIs don't get them.
   `album_artist` or `artist` its authors (`;`, `&` or `/` between
   several), `composer` or `narrator` its narrators, `series` and
   `series-part` its series, `description` its summary.
-- The cover is `cover.jpg` or `folder.jpg` in the book's folder, a picture
-  named after an `.m4b` beside it, or else the one inside its files.
+- The cover is a picture named after an `.m4b` beside it, `cover.jpg` or
+  `folder.jpg` in the book's folder, or else the one inside its files.
+  Books side by side in their author's or their series' folder don't take
+  its pictures.
 - An `.m4b` file's chapters are read, and it plays directly where `.m4a`
   does.
 - Play on a book goes on in the part heard last, where it was left. A part

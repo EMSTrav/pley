@@ -297,3 +297,54 @@ async fn books_are_found_in_the_usual_layouts() {
     .collect();
     assert_eq!(shelf(&app, &token, lib).await, expected);
 }
+
+/// The picture of a book in its folder, under the media folder.
+async fn cover(app: &TestApp, book: i64) -> Option<String> {
+    let poster: Option<String> = sqlx::query_scalar("SELECT poster FROM items WHERE id = ?")
+        .bind(book)
+        .fetch_one(&app.state.db.read)
+        .await
+        .unwrap();
+    poster
+        .map(|p| std::path::Path::new(&p).strip_prefix(app.media.path()).unwrap().to_string_lossy().replace('\\', "/"))
+}
+
+/// A folder's picture is the cover of the book whose folder it is, not of
+/// books side by side in their author's or their series' folder, which
+/// keep the pictures named after them, or else the ones in their files.
+#[tokio::test]
+async fn books_side_by_side_keep_their_own_covers() {
+    let (app, token) = tagged_app().await;
+    tagged(&app, "books/Author C/Book Four.m4b", json!({"album": "Book Four"}));
+    tagged(&app, "books/Author C/Book Five.m4b", json!({"album": "Book Five"}));
+    app.media_file("books/Author C/folder.jpg", 64);
+    app.media_file("books/Author C/Book Five.jpg", 64);
+    app.media_file("books/Author E/Series Y/Book Nine.m4b", 512);
+    app.media_file("books/Author E/Series Y/Book Ten.m4b", 512);
+    app.media_file("books/Author E/Series Y/cover.jpg", 64);
+    tagged(&app, "books/Author A/Book One/Book One.m4b", json!({"album": "Book One"}));
+    app.media_file("books/Author A/Book One/cover.jpg", 64);
+    app.media_file("books/Author B/Book Three/01.mp3", 512);
+    app.media_file("books/Author B/Book Three/02.mp3", 512);
+    app.media_file("books/Author B/Book Three/folder.jpg", 64);
+    app.media_file("books/Author F/Series W/Book Sixteen.m4b", 512);
+    app.media_file("books/Author F/Series W/cover.jpg", 64);
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+
+    let ids = app.ids(lib, &token).await;
+    assert_eq!(cover(&app, ids["Book Four"]).await, None, "the author's picture isn't the book's");
+    assert_eq!(cover(&app, ids["Book Five"]).await.as_deref(), Some("books/Author C/Book Five.jpg"));
+    assert_eq!(cover(&app, ids["Book Nine"]).await, None, "nor the series' picture");
+    assert_eq!(cover(&app, ids["Book Ten"]).await, None);
+    assert_eq!(cover(&app, ids["Book One"]).await.as_deref(), Some("books/Author A/Book One/cover.jpg"));
+    assert_eq!(cover(&app, ids["Book Three"]).await.as_deref(), Some("books/Author B/Book Three/folder.jpg"));
+
+    // Alone in its folder, a book has the folder's picture, until another
+    // book comes beside it.
+    assert_eq!(cover(&app, ids["Book Sixteen"]).await.as_deref(), Some("books/Author F/Series W/cover.jpg"));
+    app.media_file("books/Author F/Series W/Book Seventeen.m4b", 512);
+    let r = app.post(&format!("/api/libraries/{lib}/scan"), &token, json!({})).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
+    app.wait_for_scans().await;
+    assert_eq!(cover(&app, ids["Book Sixteen"]).await, None);
+}

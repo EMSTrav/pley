@@ -1361,6 +1361,16 @@ fn artwork_changes(rows: Vec<ArtworkRow>, sidecars: &Sidecars) -> Vec<ArtworkCha
         sidecars.image(Path::new(dir), bases).map(|path| path_str(&path))
     };
     let strings = |names: &[&str]| names.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    // Books side by side in a folder (an author's `.m4b` files of one
+    // series) share it: its pictures are none of theirs. Counted here, from
+    // the rows at hand, rather than per book in the query, as items have no
+    // index on their folders.
+    let mut book_dirs: HashMap<String, usize> = HashMap::new();
+    for row in rows.iter().filter(|r| r.kind == "audiobook") {
+        if let Some(path) = &row.path {
+            *book_dirs.entry(path.clone()).or_default() += 1;
+        }
+    }
     let mut changes = Vec::new();
     for row in rows {
         let file_stem_bases = |suffixes: &[&str]| -> Vec<String> {
@@ -1417,12 +1427,15 @@ fn artwork_changes(rows: Vec<ArtworkRow>, sidecars: &Sidecars) -> Vec<ArtworkCha
                 (lookup(path, &strings(&["cover", "folder", "front", "album", "poster"])), None, None)
             }
             "audiobook" => {
-                // `Book.m4b` beside `Book.jpg`, else the folder's cover;
-                // embedded art comes on request (see `catalog`).
-                let path = row.path.as_deref().unwrap_or_default();
+                // `Book.m4b` beside `Book.jpg`, else the cover of the book's
+                // own folder; embedded art comes on request (see `catalog`).
                 let named =
                     file_dir.as_deref().and_then(|dir| lookup(dir, &file_stem_bases(&["", "-cover", "-poster"])));
-                (named.or_else(|| lookup(path, &strings(&["cover", "folder", "front", "poster"]))), None, None)
+                let own_folder = row.path.as_deref().filter(|path| book_dirs.get(*path) == Some(&1));
+                let poster = named.or_else(|| {
+                    own_folder.and_then(|path| lookup(path, &strings(&["cover", "folder", "front", "poster"])))
+                });
+                (poster, None, None)
             }
             "episode" => {
                 let dir = file_dir.clone().unwrap_or_default();
@@ -1431,6 +1444,10 @@ fn artwork_changes(rows: Vec<ArtworkRow>, sidecars: &Sidecars) -> Vec<ArtworkCha
             _ => (None, None, None),
         };
 
+        // An audiobook's local pictures are only the ones found for it: one
+        // its folder gave it before the folder was found to be another
+        // book's too, or its author's, goes.
+        let only_found = row.kind == "audiobook";
         let decide = |current: &Option<String>, local: Option<String>| -> Swap {
             let after = match (current, local) {
                 (Some(cur), Some(new)) if *cur == new => return None,
@@ -1439,7 +1456,8 @@ fn artwork_changes(rows: Vec<ArtworkRow>, sidecars: &Sidecars) -> Vec<ArtworkCha
                 // something else (downloaded art lives in the blob store).
                 (Some(cur), None)
                     if !crate::store::is_blob(cur)
-                        && !(Path::new(cur).exists() && super::walk::leads_to_its_kind(Path::new(cur))) =>
+                        && (only_found
+                            || !(Path::new(cur).exists() && super::walk::leads_to_its_kind(Path::new(cur)))) =>
                 {
                     None
                 }
