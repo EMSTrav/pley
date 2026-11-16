@@ -913,7 +913,11 @@ mod tests {
         });
         for sql in [
             "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (1, 'sam', '', 1, 0)",
-            "INSERT INTO libraries (id, name, kind, paths, created_at) VALUES (1, 'Movies', 'movies', '[]', 0)",
+            // Scanned just now: the library watcher's periodic rescan, which
+            // starts with the server, leaves it be. A scan of a library
+            // without folders would take the film away under the test.
+            "INSERT INTO libraries (id, name, kind, paths, created_at, scanned_at)
+             VALUES (1, 'Movies', 'movies', '[]', 0, CAST(strftime('%s', 'now') AS INTEGER))",
             "INSERT INTO items (id, library_id, kind, key, title, sort_title, added_at, updated_at)
              VALUES (1, 1, 'movie', 'm', 'Film', 'film', 0, 0)",
         ] {
