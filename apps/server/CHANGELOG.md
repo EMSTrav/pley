@@ -9,6 +9,22 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Fixed
+
+- Play on… lists Google Cast and AirPlay devices only where Pley listens
+  on an address of their network. Behind a reverse proxy, with Pley
+  listening on its own computer alone, it listed them all and every cast
+  failed; the log now says why none is listed.
+- A cast from a Play on… list opened more than 5 minutes earlier looks
+  for the device again, where it answered that the device wasn't on any
+  more.
+- An AirPlay cast of an MP4 played as it is shows the subtitles picked,
+  where it dropped them. It plays without them, as before, when the server
+  can't make the stream that shows them.
+- When the server's limit on streams is reached, a cast ends what its
+  device plays only if that makes room for the new stream, where it could
+  stop the device for nothing.
+
 ## [0.1.12] - 2026-11-16
 
 ### Added
@@ -34,8 +50,7 @@ describes how they are made.
   once, with the code it shows, and administrators can forget pairings in
   Settings → Network. A TV running a Pley app is listed once, as the app.
   Macs are listed as computers, and the server's own Mac isn't listed.
-  They're listed while discovery is on in Settings → Network and Pley
-  listens on an address of the network they're on.
+  They're listed while discovery is on in Settings → Network.
 - The dashboard says what plays each session: a Pley app, an app through
   the Plex or Jellyfin API, Google Cast or AirPlay. Stopping one offers a
   message only for Pley apps, the only ones that show it.
