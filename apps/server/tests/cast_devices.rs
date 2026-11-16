@@ -689,7 +689,14 @@ async fn stuck_transcoder() -> String {
 /// A transcoder that makes every job at once, and is never asked for its
 /// segments here (the fake device doesn't fetch them): its address.
 async fn making_transcoder() -> String {
+    making_transcoder_until(Arc::default()).await
+}
+
+/// [`making_transcoder`], which takes no new job once `busy` is set: it
+/// answers `503`, as a transcoder that can't take one now does.
+async fn making_transcoder_until(busy: Arc<AtomicBool>) -> String {
     use axum::Json;
+    use axum::response::IntoResponse;
     use axum::routing::{delete, get, post};
     use pley_transcoder_api::{AudioPlan, JobCreated, JobRequest, VideoPlan};
     static MADE: AtomicUsize = AtomicUsize::new(0);
@@ -698,17 +705,24 @@ async fn making_transcoder() -> String {
         .route("/v1/info", get(move || async move { Json(info) }))
         .route(
             "/v1/jobs",
-            post(|Json(job): Json<JobRequest>| async move {
-                Json(JobCreated {
-                    id: format!("job{}", MADE.fetch_add(1, Ordering::SeqCst)),
-                    duration_ms: LENGTH_MS,
-                    segment_seconds: 4.0,
-                    segment_count: 1800,
-                    video: job.video.as_ref().map(|v| VideoPlan { mode: v.mode, ..Default::default() }),
-                    audio: job.audio.as_ref().map(|a| AudioPlan { mode: a.mode, ..Default::default() }),
-                    segment_format: job.segment_format,
-                    ..Default::default()
-                })
+            post(move |Json(job): Json<JobRequest>| {
+                let busy = busy.load(Ordering::SeqCst);
+                async move {
+                    if busy {
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                    Json(JobCreated {
+                        id: format!("job{}", MADE.fetch_add(1, Ordering::SeqCst)),
+                        duration_ms: LENGTH_MS,
+                        segment_seconds: 4.0,
+                        segment_count: 1800,
+                        video: job.video.as_ref().map(|v| VideoPlan { mode: v.mode, ..Default::default() }),
+                        audio: job.audio.as_ref().map(|a| AudioPlan { mode: a.mode, ..Default::default() }),
+                        segment_format: job.segment_format,
+                        ..Default::default()
+                    })
+                    .into_response()
+                }
             }),
         )
         .route("/v1/jobs/{id}", delete(|| async { StatusCode::NO_CONTENT }));
@@ -748,16 +762,47 @@ fn transcoder_info() -> pley_transcoder_api::TranscoderInfo {
     }
 }
 
-#[tokio::test]
-async fn a_cast_past_the_limit_on_streams_ends_the_stream_the_device_plays() {
-    let transcoder = making_transcoder().await;
-    let mut w = world_where(|config| {
+/// The world, with the transcoder at `transcoder`, ready.
+async fn world_transcoding(transcoder: String) -> World {
+    let w = world_where(|config| {
         config.transcoder_url = Some(transcoder);
         config.transcoder_token = Some("secret".into());
     })
     .await;
     w.app.state.transcoder.start();
     assert!(w.app.state.transcoder.wait_ready(Duration::from_secs(10)).await);
+    w
+}
+
+/// A phone of the admin's plays the film, taking H.264 alone: a video
+/// transcode of the server's while the film is HEVC.
+async fn phone_plays(w: &World) {
+    let caps = json!({"containers": ["mp4"], "video_codecs": ["h264"], "audio_codecs": ["aac"]});
+    let body = json!({"item_id": w.film, "caps": caps, "client_id": "phone"});
+    let phone = w.app.post("/api/playback", &w.admin, body).await;
+    assert_eq!(phone.status, StatusCode::OK, "{}", phone.text());
+}
+
+/// The session of the cast playing on the device: its id.
+async fn on_the_device(w: &World) -> Value {
+    let listed = sessions(w).await;
+    let cast = listed.iter().find(|s| s["device_id"] == "cast:dev");
+    cast.unwrap_or_else(|| panic!("no cast plays: {listed:?}"))["session_id"].clone()
+}
+
+/// The cast of session `playing` plays on, a moment later: its session is
+/// there, and nothing stopped the device.
+async fn plays_on(w: &mut World, playing: &Value) {
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(&on_the_device(w).await, playing);
+    while let Ok((_, payload)) = w.sent.try_recv() {
+        assert_ne!(payload["type"], "STOP", "{payload}");
+    }
+}
+
+#[tokio::test]
+async fn a_cast_past_the_limit_on_streams_ends_the_stream_the_device_plays() {
+    let mut w = world_transcoding(making_transcoder().await).await;
     let one = w.app.put("/api/settings", &w.admin, json!({"max_transcodes": 1, "seek_previews": false})).await;
     assert_eq!(one.status, StatusCode::OK, "{}", one.text());
     w.app.get("/api/remote/devices?nearby=1", &w.admin).await;
@@ -781,23 +826,13 @@ async fn a_cast_past_the_limit_on_streams_ends_the_stream_the_device_plays() {
 
 #[tokio::test]
 async fn a_cast_past_the_video_limit_leaves_a_copy_the_device_plays_be() {
-    let transcoder = making_transcoder().await;
-    let mut w = world_where(|config| {
-        config.transcoder_url = Some(transcoder);
-        config.transcoder_token = Some("secret".into());
-    })
-    .await;
-    w.app.state.transcoder.start();
-    assert!(w.app.state.transcoder.wait_ready(Duration::from_secs(10)).await);
+    let mut w = world_transcoding(making_transcoder().await).await;
     let limits = json!({"max_transcodes": 4, "max_video_transcodes": 1, "seek_previews": false});
     assert_eq!(w.app.put("/api/settings", &w.admin, limits).await.status, StatusCode::OK);
     w.app.get("/api/remote/devices?nearby=1", &w.admin).await;
     // A phone transcodes HEVC: the server's one video transcode.
     film_in(&w.app, w.film, "hevc").await;
-    let caps = json!({"containers": ["mp4"], "video_codecs": ["h264"], "audio_codecs": ["aac"]});
-    let phone =
-        w.app.post("/api/playback", &w.admin, json!({"item_id": w.film, "caps": caps, "client_id": "phone"})).await;
-    assert_eq!(phone.status, StatusCode::OK, "{}", phone.text());
+    phone_plays(&w).await;
     // The device plays H.264 from Matroska, copied into a stream.
     film_in(&w.app, w.film, "h264").await;
     sqlx::query("UPDATE media_files SET container = 'mkv'").execute(&w.app.state.db.write).await.unwrap();
@@ -815,6 +850,82 @@ async fn a_cast_past_the_video_limit_leaves_a_copy_the_device_plays_be() {
     while let Ok((_, payload)) = w.sent.try_recv() {
         assert_ne!(payload["type"], "STOP", "{payload}");
     }
+}
+
+#[tokio::test]
+async fn a_cast_that_wouldnt_fit_with_the_devices_stream_gone_leaves_it_be() {
+    let mut w = world_transcoding(making_transcoder().await).await;
+    // Two streams, one of which may transcode video.
+    let limits = json!({"max_transcodes": 2, "max_video_transcodes": 1, "seek_previews": false});
+    assert_eq!(w.app.put("/api/settings", &w.admin, limits).await.status, StatusCode::OK);
+    w.app.get("/api/remote/devices?nearby=1", &w.admin).await;
+    // A phone transcodes HEVC, and the device plays H.264 from Matroska,
+    // copied into a stream: both streams are taken.
+    film_in(&w.app, w.film, "hevc").await;
+    phone_plays(&w).await;
+    film_in(&w.app, w.film, "h264").await;
+    sqlx::query("UPDATE media_files SET container = 'mkv'").execute(&w.app.state.db.write).await.unwrap();
+    let cast = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!(cast.status, StatusCode::NO_CONTENT, "{}", cast.text());
+    next(&mut w.sent, "LOAD").await;
+    let playing = on_the_device(&w).await;
+    // A cast that needs a video transcode finds no stream free, and with the
+    // copy ended it would still find the phone's video transcode: the copy
+    // plays on.
+    film_in(&w.app, w.film, "hevc").await;
+    let failed = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!(failed.status, StatusCode::SERVICE_UNAVAILABLE, "{}", failed.text());
+    plays_on(&mut w, &playing).await;
+    assert_eq!(sessions(&w).await.len(), 2);
+}
+
+#[tokio::test]
+async fn a_cast_past_a_limit_lowered_under_the_streams_playing_leaves_the_devices_be() {
+    let mut w = world_transcoding(making_transcoder().await).await;
+    let previews = json!({"seek_previews": false});
+    assert_eq!(w.app.put("/api/settings", &w.admin, previews).await.status, StatusCode::OK);
+    w.app.get("/api/remote/devices?nearby=1", &w.admin).await;
+    // A phone and the device each transcode HEVC.
+    film_in(&w.app, w.film, "hevc").await;
+    phone_plays(&w).await;
+    let cast = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!(cast.status, StatusCode::NO_CONTENT, "{}", cast.text());
+    next(&mut w.sent, "LOAD").await;
+    let playing = on_the_device(&w).await;
+    // An administrator lowers the limit to one stream while both play: with
+    // the device's ended, the phone's would still reach it.
+    let one = w.app.put("/api/settings", &w.admin, json!({"max_transcodes": 1})).await;
+    assert_eq!(one.status, StatusCode::OK, "{}", one.text());
+    let body = json!({"item_id": w.film, "start_ms": 600_000});
+    let failed = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, body).await;
+    assert_eq!(failed.status, StatusCode::SERVICE_UNAVAILABLE, "{}", failed.text());
+    plays_on(&mut w, &playing).await;
+    assert_eq!(sessions(&w).await.len(), 2);
+}
+
+#[tokio::test]
+async fn a_cast_the_transcoder_refuses_leaves_the_devices_stream_be() {
+    let busy = Arc::new(AtomicBool::new(false));
+    let mut w = world_transcoding(making_transcoder_until(busy.clone()).await).await;
+    let limits = json!({"max_transcodes": 4, "max_video_transcodes": 1, "seek_previews": false});
+    assert_eq!(w.app.put("/api/settings", &w.admin, limits).await.status, StatusCode::OK);
+    w.app.get("/api/remote/devices?nearby=1", &w.admin).await;
+    // The device transcodes HEVC: the server's one video transcode.
+    film_in(&w.app, w.film, "hevc").await;
+    let cast = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!(cast.status, StatusCode::NO_CONTENT, "{}", cast.text());
+    next(&mut w.sent, "LOAD").await;
+    let playing = on_the_device(&w).await;
+    // The transcoder takes no new job now. A cast it would only copy is
+    // refused for that, not for the limit, which ending the device's stream
+    // wouldn't change: it plays on.
+    busy.store(true, Ordering::SeqCst);
+    film_in(&w.app, w.film, "h264").await;
+    sqlx::query("UPDATE media_files SET container = 'mkv'").execute(&w.app.state.db.write).await.unwrap();
+    let failed = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!(failed.status, StatusCode::SERVICE_UNAVAILABLE, "{}", failed.text());
+    plays_on(&mut w, &playing).await;
+    assert_eq!(sessions(&w).await.len(), 1);
 }
 
 #[tokio::test]

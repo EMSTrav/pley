@@ -33,6 +33,12 @@ pub enum AppError {
     ConflictAs(&'static str, String),
     #[error("{0}")]
     Unavailable(String),
+    /// A stream past the server's limit on streams (Settings → Transcoder),
+    /// with the pool of the slot it needed: answered as
+    /// [`AppError::Unavailable`] is, and told apart only within the server
+    /// (a cast may end what its device plays to make room).
+    #[error("{1}")]
+    StreamsFull(crate::playback::Pool, String),
     /// Something this server can't do at all (its transcoder is too old for
     /// it): `501`, as opposed to `503`'s "not now".
     #[error("{0}")]
@@ -105,6 +111,7 @@ impl AppError {
             Self::ConflictWith(m, d) => Self::ConflictWith(m.clone(), d.clone()),
             Self::ConflictAs(code, m) => Self::ConflictAs(code, m.clone()),
             Self::Unavailable(m) => Self::Unavailable(m.clone()),
+            Self::StreamsFull(pool, m) => Self::StreamsFull(*pool, m.clone()),
             Self::NotImplemented(m) => Self::NotImplemented(m.clone()),
             Self::TooManyRequests(m) => Self::TooManyRequests(m.clone()),
             Self::TwoStep(m) => Self::TwoStep(m.clone()),
@@ -127,7 +134,7 @@ impl AppError {
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict(_) | Self::ConflictWith(..) => (StatusCode::CONFLICT, "conflict"),
             Self::ConflictAs(code, _) => (StatusCode::CONFLICT, *code),
-            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
+            Self::Unavailable(_) | Self::StreamsFull(..) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             Self::NotImplemented(_) => (StatusCode::NOT_IMPLEMENTED, "not_implemented"),
             Self::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests"),
             Self::TwoStep(_) => (StatusCode::UNAUTHORIZED, "two_step"),
@@ -234,6 +241,7 @@ mod tests {
             (AppError::ConflictAs("not_controllable", "no".into()), 409, "not_controllable"),
             (AppError::TooManyRequests("no".into()), 429, "too_many_requests"),
             (AppError::Unavailable("no".into()), 503, "unavailable"),
+            (AppError::StreamsFull(crate::playback::Pool::Video, "no".into()), 503, "unavailable"),
             (AppError::TwoStep("no".into()), 401, "two_step"),
             (AppError::TwoStepSetup("no".into(), json!({})), 401, "two_step_setup"),
             (AppError::InvalidToken, 401, "unauthorized"),
@@ -249,6 +257,11 @@ mod tests {
             assert_eq!(answer(again).await.0, status);
         }
         assert_eq!(answer(AppError::not_found("item 42 not found")).await.1["message"], "item 42 not found");
+        // A stream past the limit answers as any 503 does: clients can't
+        // tell it apart.
+        let full = "the server is already running its maximum of 4 transcodes";
+        let answered = answer(AppError::StreamsFull(crate::playback::Pool::Light, full.into())).await;
+        assert_eq!(answered, (503, json!({"code": "unavailable", "message": full})));
     }
 
     #[tokio::test]

@@ -2396,7 +2396,7 @@ impl Sessions {
     /// starts ([`Sessions::transcodes_video`]).
     pub fn reserve_transcode(&self, pool: Pool, total: usize, video: usize) -> Result<TranscodeSlot<'_>, Full> {
         let map = self.map.lock();
-        if let Some(full) = self.full_in(&map, pool, total, video) {
+        if let Some(full) = self.full_in(&map, pool, total, video, &[]) {
             return Err(full);
         }
         self.reserved[pool as usize].fetch_add(1, Ordering::SeqCst);
@@ -2406,15 +2406,32 @@ impl Sessions {
     /// The limit a stream of `pool` is past now, as
     /// [`Sessions::reserve_transcode`] would answer, without taking a slot.
     pub fn full(&self, pool: Pool, total: usize, video: usize) -> Option<Full> {
-        self.full_in(&self.map.lock(), pool, total, video)
+        self.full_in(&self.map.lock(), pool, total, video, &[])
     }
 
-    fn full_in(&self, map: &HashMap<String, Arc<Session>>, pool: Pool, total: usize, video: usize) -> Option<Full> {
+    /// The limit a stream of `pool` would be past with the sessions of
+    /// `gone` ended, counted as [`Sessions::full`] counts: only the live
+    /// streams among theirs free a slot, and the play requests still
+    /// creating their job keep theirs. `None`: ending them makes room.
+    pub fn full_without(&self, pool: Pool, total: usize, video: usize, gone: &[&str]) -> Option<Full> {
+        self.full_in(&self.map.lock(), pool, total, video, gone)
+    }
+
+    /// The limit a stream of `pool` is past, the sessions of `gone` left out.
+    fn full_in(
+        &self,
+        map: &HashMap<String, Arc<Session>>,
+        pool: Pool,
+        total: usize,
+        video: usize,
+        gone: &[&str],
+    ) -> Option<Full> {
         let reserved = |pool: Pool| self.reserved[pool as usize].load(Ordering::SeqCst);
-        if live_transcodes(map, None) + reserved(Pool::Video) + reserved(Pool::Light) >= total {
+        let live = |pool| live_transcodes(map.values().filter(|s| !gone.contains(&s.id.as_str())), pool);
+        if live(None) + reserved(Pool::Video) + reserved(Pool::Light) >= total {
             return Some(Full::Total);
         }
-        if pool == Pool::Video && live_transcodes(map, Some(Pool::Video)) + reserved(Pool::Video) >= video {
+        if pool == Pool::Video && live(Some(Pool::Video)) + reserved(Pool::Video) >= video {
             return Some(Full::Video);
         }
         None
@@ -2430,7 +2447,7 @@ impl Sessions {
         }
         let map = self.map.lock();
         let reserved = &self.reserved[Pool::Video as usize];
-        if live_transcodes(&map, Some(Pool::Video)) + reserved.load(Ordering::SeqCst) >= video {
+        if live_transcodes(map.values(), Some(Pool::Video)) + reserved.load(Ordering::SeqCst) >= video {
             return Err(Full::Video);
         }
         // Under the lock, as a slot is taken: one count for the other.
@@ -2657,7 +2674,7 @@ impl Sessions {
     /// Abandoned sessions (closed tabs) stop counting quickly even though
     /// they are only reaped later.
     pub fn active_transcodes(&self) -> usize {
-        live_transcodes(&self.map.lock(), None)
+        live_transcodes(self.map.lock().values(), None)
     }
 
     /// Every [`REAP_EVERY`]: sessions whose player went quiet leave "Now
@@ -2690,14 +2707,15 @@ pub struct Sweep {
     pub quieted: Vec<Arc<Session>>,
 }
 
-/// See [`Sessions::active_transcodes`]: those of `pool`, or of both.
-fn live_transcodes(map: &HashMap<String, Arc<Session>>, pool: Option<Pool>) -> usize {
+/// See [`Sessions::active_transcodes`]: those of `pool` among `sessions`, or
+/// of both.
+fn live_transcodes<'a>(sessions: impl Iterator<Item = &'a Arc<Session>>, pool: Option<Pool>) -> usize {
     let now = now();
     let counts = |s: &Session| match (&s.transcode, pool) {
         (Some(spec), Some(pool)) => Pool::of(spec.request.video.as_ref()) == pool,
         (spec, _) => spec.is_some(),
     };
-    map.values().filter(|s| counts(s) && s.is_active(now)).count()
+    sessions.filter(|s| counts(s) && s.is_active(now)).count()
 }
 
 // ------------------------------------------------------------------ status mapping
@@ -4231,6 +4249,35 @@ mod tests {
         assert!(sessions.reserve_transcode(Pool::Light, 4, 2).is_ok());
         // Music has no video.
         assert_eq!(Pool::of(None), Pool::Light);
+    }
+
+    #[test]
+    fn ending_sessions_makes_room_only_with_the_live_streams_they_hold() {
+        let sessions = Sessions::default();
+        // A phone transcodes video and a TV copies: of two streams, one of
+        // which may transcode video, both are taken.
+        let phone = sessions.insert(session(1, None, true));
+        let tv = sessions.insert(remux_session());
+        assert_eq!(sessions.full(Pool::Light, 2, 1), Some(Full::Total));
+        // With the TV's copy ended a copy fits, but not a video transcode:
+        // the phone holds the one there is.
+        let without_tv = [tv.id.as_str()];
+        assert_eq!(sessions.full_without(Pool::Light, 2, 1, &without_tv), None);
+        assert_eq!(sessions.full_without(Pool::Video, 2, 1, &without_tv), Some(Full::Video));
+        assert_eq!(sessions.full_without(Pool::Video, 2, 1, &[phone.id.as_str()]), None);
+        assert_eq!(sessions.full(Pool::Light, 2, 1), Some(Full::Total), "nothing ended");
+        // A limit lowered under the streams playing is still reached with
+        // one of them ended.
+        assert_eq!(sessions.full_without(Pool::Light, 1, 1, &without_tv), Some(Full::Total));
+        // A play request still creating its job keeps its slot.
+        let starting = sessions.reserve_transcode(Pool::Light, 3, 1).expect("a third stream");
+        assert_eq!(sessions.full_without(Pool::Light, 2, 1, &without_tv), Some(Full::Total));
+        drop(starting);
+        // A quiet session's stream doesn't count: ending it frees nothing.
+        tv.play.lock().updated_at = now() - ACTIVE_WINDOW_SECS - 1;
+        assert_eq!(sessions.full(Pool::Light, 1, 1), Some(Full::Total), "the phone's");
+        assert_eq!(sessions.full_without(Pool::Light, 1, 1, &without_tv), Some(Full::Total));
+        assert_eq!(sessions.full_without(Pool::Light, 1, 1, &[phone.id.as_str()]), None);
     }
 
     #[test]

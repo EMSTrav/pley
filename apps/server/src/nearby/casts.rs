@@ -24,7 +24,7 @@ use crate::catalog::ItemRow;
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
 use crate::network::{Kind, Listener};
-use crate::playback::{Control, Method, PlaybackMode, PlaybackRequest, Pool, Session};
+use crate::playback::{Control, Method, PlaybackMode, PlaybackRequest, Pool};
 use crate::state::AppState;
 
 /// How often the device is asked where it is, and its place kept.
@@ -479,8 +479,11 @@ fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
 }
 
 /// Starts the session of a cast to the device of `key`, as Pley's own
-/// players start one. Once the cast's attempt has `abandoned` it, the
-/// cast playing there is no longer ended to make room.
+/// players start one. A stream refused past the server's limit on streams
+/// is tried again once ending what the device plays makes room for it
+/// ([`end_cast_in_the_way`]); a refusal for any other reason leaves what
+/// plays there be. Once the cast's attempt has `abandoned` it, nothing is
+/// ended to make room.
 async fn start_session(
     state: AppState,
     user: AuthUser,
@@ -498,14 +501,16 @@ async fn start_session(
         )
     };
     let started = match start(request.clone()).await {
-        // The server's limit on streams may be full with the cast playing
-        // there: it ends first, then, leaving the device to this one.
-        Err(AppError::Unavailable(message)) if !abandoned.is_cancelled() => {
-            if end_cast_in_the_way(&state, &key) {
-                request.keep_previous = false;
-                start(request.clone()).await
-            } else {
-                Err(AppError::Unavailable(message))
+        // Past the server's limit on streams, what plays there leaves the
+        // device to this cast when that makes room for it.
+        Err(AppError::StreamsFull(pool, message)) if !abandoned.is_cancelled() => {
+            match end_cast_in_the_way(&state, &key, pool) {
+                Room::Lacking => Err(AppError::StreamsFull(pool, message)),
+                Room::Free => start(request.clone()).await,
+                Room::Made => {
+                    request.keep_previous = false;
+                    start(request.clone()).await
+                }
             }
         }
         started => started,
@@ -514,7 +519,7 @@ async fn start_session(
         // A stream asked for only so that the device shows the subtitles
         // (AirPlay's), which the server can't make now: the file plays as
         // it is, without them, rather than nothing.
-        Err(AppError::Unavailable(_) | AppError::ConflictAs("video_not_converted", _))
+        Err(AppError::Unavailable(_) | AppError::StreamsFull(..) | AppError::ConflictAs("video_not_converted", _))
             if request.mode == PlaybackMode::Remux && !abandoned.is_cancelled() =>
         {
             tracing::info!("a cast's subtitles need a stream the server can't make now: it plays without them");
@@ -525,36 +530,46 @@ async fn start_session(
     }
 }
 
-/// Ends the cast playing on the device of `key` when the server's limit on
-/// streams is full and its session holds a slot that a new stream may take:
-/// one of all of them, or one of the video transcodes when only those are
-/// full. At once, so that the next session finds the slot free; its
-/// follower leaves the device to the cast that replaces it. Whether it did.
-/// A cast played as its file is holds no slot, and plays on, as any does
-/// when the server refused for another reason (no transcoder running).
-fn end_cast_in_the_way(state: &AppState, key: &str) -> bool {
+/// The room [`end_cast_in_the_way`] found for a cast's stream.
+enum Room {
+    /// Not enough, even with what the device plays ended: it plays on.
+    Lacking,
+    /// A slot freed meanwhile: nothing needed to end.
+    Free,
+    /// What the device played ended to make it.
+    Made,
+}
+
+/// Makes room for a cast to the device of `key` whose stream, needing a
+/// slot of `pool`, was refused past the server's limit on streams. What the
+/// device plays ends only when the stream fits once it has, and not while
+/// it plays, counted as the limit counts (the streams whose player was
+/// heard from lately, and the play requests still creating their job): at
+/// once, so that the next try finds the slot free, and its follower leaves
+/// the device to the cast that replaces it. It plays on when ending it
+/// would free nothing the stream can take: a file played as it is, a copy
+/// while a video transcode is refused, a stream gone quiet, a limit lowered
+/// under the streams playing.
+fn end_cast_in_the_way(state: &AppState, key: &str, pool: Pool) -> Room {
     let settings = state.settings.get();
     let total = settings.max_transcodes as usize;
     let video = settings.max_video_transcodes.min(settings.max_transcodes) as usize;
-    let all_full = state.sessions.full(Pool::Light, total, video).is_some();
-    let video_full = state.sessions.full(Pool::Video, total, video).is_some();
     // The device's own sessions: the server names the device of a cast.
     let theirs: Vec<_> = state.sessions.list().into_iter().filter(|s| s.device_id == key).collect();
-    let frees = |s: &Session| {
-        s.transcode
-            .as_ref()
-            .is_some_and(|spec| all_full || (video_full && Pool::of(spec.request.video.as_ref()) == Pool::Video))
-    };
-    if !theirs.iter().any(|s| frees(s)) {
-        return false;
+    let ids: Vec<&str> = theirs.iter().map(|s| s.id.as_str()).collect();
+    if state.sessions.full_without(pool, total, video, &ids).is_some() {
+        return Room::Lacking;
+    }
+    if state.sessions.full(pool, total, video).is_none() {
+        return Room::Free;
     }
     if let Some((_, before)) = state.nearby.playing.lock().get(key) {
         before.cancel();
     }
-    for session in theirs {
-        end_session(state, &session.id);
+    for id in ids {
+        end_session(state, id);
     }
-    true
+    Room::Made
 }
 
 /// The answer to a cast that didn't play within its time to start.

@@ -455,9 +455,10 @@ impl From<AppError> for PlexError {
             | AppError::Conflict(m)
             | AppError::ConflictWith(m, _)
             | AppError::ConflictAs(_, m) => PlexError::BadRequest(m),
-            AppError::Unavailable(m) | AppError::TooManyRequests(m) | AppError::NotImplemented(m) => {
-                PlexError::Unavailable(m)
-            }
+            AppError::Unavailable(m)
+            | AppError::StreamsFull(_, m)
+            | AppError::TooManyRequests(m)
+            | AppError::NotImplemented(m) => PlexError::Unavailable(m),
             AppError::Internal(e) => PlexError::Internal(e),
         }
     }

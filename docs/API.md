@@ -4020,11 +4020,13 @@ would.
   are passed on once it plays. The session ends when the device stops or
   finishes it, when another app takes the device over, or when it is
   stopped in Pley, which stops the device too. A new cast to the device
-  ends the one before once it plays: one that fails leaves it playing,
-  unless the server's limit on streams is full and the one before holds a
-  slot the new one can take (any, or a video transcode's when only those
-  are full), which then ends first. One played as its file is holds none,
-  and plays on.
+  ends the one before once it plays: one that fails leaves it playing.
+  Only a cast the server's limits on streams refused ends it first, and
+  starts again, when the new stream fits with it ended but not with it
+  playing, counted as the limits count (streams whose player was heard
+  from in the last 90 seconds, and plays still starting): a file played
+  as it is holds no stream, and a copy no video transcode. A refusal for
+  any other reason (the transcoder not running) leaves it playing.
 - **AirPlay devices.** Apple TVs and TVs with AirPlay 2 built in are
   listed the same way, with `receiver_id` and `device_id`
   `airplay:<its id>` and `protocol: "airplay"`. The server finds them by
