@@ -4,8 +4,9 @@ What Pley does, in full. The [README](../README.md) has the short version.
 
 ## Libraries
 
-- Movies, TV shows and music, scanned incrementally and rescanned when files
-  change. An offline drive isn't mistaken for deleted media.
+- Movies, TV shows, music and audiobooks, scanned incrementally and
+  rescanned when files change. An offline drive isn't mistaken for deleted
+  media.
 - Common naming schemes: `Movie (2019)`, release names, `{tmdb-123}` hints,
   editions (`{edition-Director's Cut}`), `S01E02`, `1x02`, date-based and
   anime episodes, and extras (`Trailers/` folders,
@@ -18,6 +19,32 @@ What Pley does, in full. The [README](../README.md) has the short version.
 - Moving from Plex: its libraries, its Home users as profiles with their
   restrictions, labels, dates added, and what everyone watched
   ([MOVING_FROM_PLEX.md](MOVING_FROM_PLEX.md)).
+
+### Audiobooks
+
+Audiobook libraries are in the server's API; the apps don't show them yet.
+
+- A book is an `.m4b` file, or a folder of audio files (with `CD 1`,
+  `Disc 2`… folders inside it if it has them). Folders are read as
+  `Author/Book`, `Author/Series/Book` or `Author/Book.m4b`; a book's
+  folder may begin with its place in the series (`Book 2 - Title`,
+  `2.5 - Novella`), end with its year (`Title (2007)`), and name its
+  narrator in braces (`Title {Kate Reading}`), as Audiobookshelf's do.
+- The files' tags win over their folders: `album` is the book,
+  `album_artist` or `artist` its authors (`;`, `&` or `/` between
+  several), `composer` or `narrator` its narrators, `series` and
+  `series-part` its series, `description` its summary.
+- The cover is `cover.jpg` or `folder.jpg` in the book's folder, a picture
+  named after an `.m4b` beside it, or else the one inside its files.
+- An `.m4b` file's chapters are read, and it plays directly where `.m4a`
+  does.
+- Play on a book goes on in the part heard last, where it was left. A part
+  is finished only in its last 30 seconds, not at 90 % as a film is.
+  Books part way through are in Continue Listening, on Home and in their
+  library.
+- Not yet: metadata from an online source, authors' and narrators' pages,
+  series as collections, downloads, and a place in the Plex- and
+  Jellyfin-compatible APIs, which leave audiobook libraries out.
 
 ## Metadata
 

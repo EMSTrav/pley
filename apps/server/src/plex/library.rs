@@ -22,9 +22,13 @@ use crate::listing::{SectionQuery, parse_sort, people_role, sort_rows, sort_valu
 use crate::people;
 use crate::state::AppState;
 
-/// Libraries the user can see (per-user library access).
+/// Libraries the user can see (per-user library access). Audiobooks aren't
+/// among them: Plex has no such sections, and its apps would read books as
+/// albums of tracks.
 pub(super) async fn visible_libraries(state: &AppState, user: &AuthUser) -> PlexResult<Vec<LibraryRow>> {
-    Ok(crate::access::visible_libraries(&state.db, user).await?)
+    let mut libraries = crate::access::visible_libraries(&state.db, user).await?;
+    libraries.retain(|lib| lib.kind() != crate::library::LibraryKind::Audiobooks);
+    Ok(libraries)
 }
 
 pub(super) async fn library_for(

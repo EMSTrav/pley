@@ -268,7 +268,7 @@ pub async fn progress(
     Json(body): Json<Progress>,
 ) -> ApiResult<StatusCode> {
     let row = item_or_404(&state, user.id, id).await?;
-    if !matches!(row.kind.as_str(), "movie" | "episode" | "track" | "extra") {
+    if !matches!(row.kind.as_str(), "movie" | "episode" | "track" | "part" | "extra") {
         return Err(AppError::bad_request("progress can only be recorded for playable items"));
     }
     if !matches!(body.state.as_str(), "playing" | "paused" | "stopped" | "buffering") {
@@ -493,13 +493,13 @@ async fn resolve_artwork(state: &AppState, id: i64, kind: &str) -> ApiResult<Pat
                     AppError::not_found("no artwork")
                 });
             }
-            ("poster", "album") => {
+            ("poster", "album" | "audiobook") => {
                 if let Some(path) = extract_cover(state, current).await? {
                     return Ok(path);
                 }
                 return Err(AppError::not_found("no artwork"));
             }
-            ("poster", "season" | "episode" | "track" | "extra") | ("backdrop", _) => match row.parent_id {
+            ("poster", "season" | "episode" | "track" | "part" | "extra") | ("backdrop", _) => match row.parent_id {
                 Some(parent) => current = parent,
                 None => break,
             },
@@ -565,7 +565,8 @@ async fn generate_thumb(state: &AppState, item_id: i64) -> ApiResult<PathBuf> {
     }
 }
 
-/// The cover embedded in an album's tracks, stored as the album's poster.
+/// The cover embedded in an album's tracks (an audiobook's parts), stored as
+/// the album's poster.
 async fn extract_cover(state: &AppState, album_id: i64) -> ApiResult<Option<PathBuf>> {
     let lock = state.images.generation_lock(album_id);
     let _guard = lock.lock().await;

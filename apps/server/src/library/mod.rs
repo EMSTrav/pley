@@ -1,4 +1,5 @@
-//! Libraries: folders of movies, shows or music that are scanned into items.
+//! Libraries: folders of movies, shows, music or audiobooks that are scanned
+//! into items.
 
 pub mod nfo;
 pub mod parse;
@@ -19,6 +20,9 @@ pub enum LibraryKind {
     Movies,
     Shows,
     Music,
+    /// Books read aloud: each a top-level `audiobook` with its files as
+    /// `part`s.
+    Audiobooks,
 }
 
 impl LibraryKind {
@@ -27,6 +31,7 @@ impl LibraryKind {
             LibraryKind::Movies => "movies",
             LibraryKind::Shows => "shows",
             LibraryKind::Music => "music",
+            LibraryKind::Audiobooks => "audiobooks",
         }
     }
 
@@ -35,6 +40,7 @@ impl LibraryKind {
             "movies" => Some(LibraryKind::Movies),
             "shows" => Some(LibraryKind::Shows),
             "music" => Some(LibraryKind::Music),
+            "audiobooks" => Some(LibraryKind::Audiobooks),
             _ => None,
         }
     }
@@ -45,7 +51,14 @@ impl LibraryKind {
             LibraryKind::Movies => "movie",
             LibraryKind::Shows => "show",
             LibraryKind::Music => "artist",
+            LibraryKind::Audiobooks => "audiobook",
         }
+    }
+
+    /// Whether the library holds sound alone: music or audiobooks, whose
+    /// files are audio, with no subtitles, samples or bonus material.
+    pub fn is_audio(self) -> bool {
+        matches!(self, LibraryKind::Music | LibraryKind::Audiobooks)
     }
 }
 

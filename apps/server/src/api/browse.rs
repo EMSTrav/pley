@@ -26,8 +26,9 @@ pub async fn home(
     // A row for each library the user may open, in their order.
     let libraries = crate::access::visible_libraries(&state.db, &user).await?;
     // Every hub at the same time: they don't depend on each other.
-    let (continue_rows, my_list, recent) = tokio::try_join!(
+    let (continue_rows, listening, my_list, recent) = tokio::try_join!(
         catalog::continue_watching(&state.db, user.id, None, 20),
+        catalog::continue_listening(&state.db, user.id, None, 20),
         catalog::watchlist(&state.db, user.id, Some(20)),
         futures::future::try_join_all(libraries.iter().map(|lib| catalog::recently_added(
             &state.db,
@@ -43,6 +44,12 @@ pub async fn home(
             title: i18n::t(language, "hubs.continueWatching"),
             library_id: None,
             items: continue_rows.iter().map(|r| r.to_summary_with(summaries)).collect(),
+        },
+        Hub {
+            key: "continue_listening".into(),
+            title: i18n::t(language, "hubs.continueListening"),
+            library_id: None,
+            items: listening.iter().map(|r| r.to_summary_with(summaries)).collect(),
         },
         Hub {
             key: "my_list".into(),

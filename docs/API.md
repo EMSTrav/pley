@@ -240,14 +240,14 @@ interface User {
                                     // "ask" account makes it "off", unless the same change sets it
 }
 
-type LibraryKind = "movies" | "shows" | "music";
+type LibraryKind = "movies" | "shows" | "music" | "audiobooks";
 
 interface Library {
   id: Id;
   name: string;
   kind: LibraryKind;
   paths: string[];                  // empty except for administrators (not their apps' tokens, but for Pley's own allowed `server`)
-  item_count: number;               // top-level items (movies, shows, artists) this user can see
+  item_count: number;               // top-level items (movies, shows, artists, audiobooks) this user can see
   created_at: Timestamp;
   scanned_at: Timestamp | null;
   scanning: boolean;                // a scan is queued or running
@@ -256,6 +256,7 @@ interface Library {
 }
 
 type ItemKind = "movie" | "show" | "season" | "episode" | "artist" | "album" | "track"
+              | "audiobook" | "part"  // a book, and its files in order (one for an .m4b), which play
               | "extra";            // trailers and other bonus material (ItemDetail.extras)
 
 interface UserState {
@@ -273,10 +274,10 @@ interface ItemSummary {
   title: string;
   sort_title: string;
   year?: number;
-  index?: number;                   // season, episode or track number
-  parent_id?: Id;                   // episode: season; season: show; track: album; album: artist
+  index?: number;                   // season, episode, track or part number
+  parent_id?: Id;                   // episode: season; season: show; track: album; album: artist; part: audiobook
   parent_title?: string;
-  parent_index?: number;            // episode: season number; track: disc number
+  parent_index?: number;            // episode: season number; track: disc number (not for parts)
   grandparent_id?: Id;              // episode: show; track: artist
   grandparent_title?: string;
   duration_ms?: number;
@@ -286,14 +287,15 @@ interface ItemSummary {
   backdrop_url?: string;
   thumb_url?: string;               // episode stills, video frame grabs (16:9)
   user_state: UserState;
-  leaf_count?: number;              // show, season: episodes; artist, album: tracks
-  viewed_leaf_count?: number;       // show, season: watched episodes
+  leaf_count?: number;              // show, season: episodes; artist, album: tracks; audiobook: parts
+  viewed_leaf_count?: number;       // show, season: watched episodes; audiobook: finished parts
   child_count?: number;             // show: seasons; artist: albums
   summary?: string;                 // lists: episodes only, or every kind with `summaries=1`; always in ItemDetail
   release_date?: string;            // "YYYY-MM-DD"
   extra_type?: string;              // kind "extra": trailer | featurette | behind_the_scenes | deleted_scene |
                                     // interview | scene | short | other
   media?: MediaSummary;             // only in library listings
+  authors?: string[];               // audiobook: its writers, for the line under its cover
 }
 
 interface MediaSummary {            // a movie's best file, or a show's episodes together
@@ -325,6 +327,14 @@ interface ItemDetail extends ItemSummary {
   cast: Credit[];                   // actors in billing order; episodes: guest stars; seasons: the show's
   crew: Credit[];                   // creators, directors, writers, producers
   in_watchlist: boolean;            // in the user's My List (movies and shows)
+  book?: Book;                      // audiobooks only
+}
+
+interface Book {                    // from the files' tags, else their folders (docs/FEATURES.md, "Audiobooks")
+  authors: string[];                // "Unknown Author" when nothing says
+  narrators: string[];              // may be empty
+  series: string | null;            // "Mistborn"
+  series_index: number | null;      // the book's place in its series: 2, or 2.5 between two books
 }
 
 interface Credit {
@@ -442,7 +452,7 @@ interface MediaStream {
 }
 
 interface Hub {
-  key: string;                      // "continue_watching" | "my_list" | "recently_added:<library_id>" | ...
+  key: string;                      // "continue_watching" | "continue_listening" | "my_list" | "recently_added:<library_id>" | ...
   title: string;
   library_id: Id | null;
   items: ItemSummary[];
@@ -1684,7 +1694,7 @@ Invitations have fixed limits only.
 | POST | `/api/libraries/scan` | `admin` | `202`: scans every library |
 | GET | `/api/libraries/{id}/items` | `library` | `{ total, items: ItemSummary[] }`: top-level items, paged |
 | GET | `/api/libraries/{id}/filters` | `library` | `{ genres: string[], years: number[], resolutions: string[], dynamic_ranges: string[] }`: what the titles the user may see can be filtered by |
-| GET | `/api/libraries/{id}/hubs` | `library` | `{ hubs: Hub[] }`: `continue_watching:{id}`, `recently_added:{id}`, `recently_released:{id}`, `top_rated:{id}`; music libraries only the second; empty hubs left out |
+| GET | `/api/libraries/{id}/hubs` | `library` | `{ hubs: Hub[] }`: `continue_watching:{id}`, `recently_added:{id}`, `recently_released:{id}`, `top_rated:{id}`; music libraries only the second; audiobook libraries `continue_listening:{id}` and the second; empty hubs left out |
 
 **Order.** Libraries have one shared order, chosen by administrators (new
 libraries go last). A user may choose their own (Settings → Libraries).
@@ -1776,17 +1786,19 @@ user's watch state and their access are unchanged.
   two minutes per file.
 - **`on-deck`**: the episode in progress, else next up (as in
   [Continue Watching](#continue-watching)), else the first unwatched, else
-  the first.
+  the first. For an audiobook, its part the same way: the one part way
+  through, whose `user_state.position_ms` is where Play takes it up.
 - **`related`**: movies and shows of the same library sharing collections,
   directors, creators, top-billed cast, genres and a period, best first.
   Empty for other kinds.
 - **`images`**: long-lived cache headers. Falls back to the parent's
   artwork (season → show); `404` if none.
 - **`progress`**: `state` is `playing` (the default), `paused`, `stopped`
-  or `buffering`. Movies, episodes, tracks and extras only; other kinds
-  answer `400`.
+  or `buffering`. Movies, episodes, tracks, audiobook parts and extras
+  only; other kinds answer `400`.
   - At 90 % or more the item is marked watched and the resume point
-    cleared.
+    cleared. An audiobook's part only in its last 30 seconds (or last
+    tenth, when shorter): the last tenth of a book in one file is an hour.
   - `age_ms`: how long ago a late report was made (a download played while
     the server was out of reach, up to 90 days). It changes nothing when
     the item's state changed since (played elsewhere, marked watched).
@@ -1920,7 +1932,8 @@ WebVTT file named `.srt` is taken as WebVTT). Its language is kept as ISO
 | GET | `/api/search?q=&limit=` | `library` | `{ items: ItemSummary[], people: PersonSummary[], channels: LiveChannel[] }`: `items`, `people` and `channels` each up to `limit` (default 40, 1 to 200): titles, people, and Live TV channels by name, number or what's on, for those Live TV is open to. The apps ask for 200 |
 
 - **Home** hubs, empty ones left out: `continue_watching` (in progress and
-  next up), then `my_list` ("My List", its 20 newest), then
+  next up), then `continue_listening` (audiobooks part way through), then
+  `my_list` ("My List", its 20 newest), then
   `recently_added:<library_id>` per library in the libraries' order.
 - **Search**: the closest matches first in each of `items`, `people` and
   `channels`: a name that is the whole of `q` (case, accents, apostrophes
@@ -1977,9 +1990,17 @@ that one is unwatched. When it was seen before:
 A seen episode stopped part way stays out of the in-progress rows (apps
 play a seen episode from its start), and can still be next up.
 
+**Continue Listening** (`continue_listening` on Home and in an audiobook
+library's hubs) holds the audiobooks the user is part way through, the
+one heard last first: a part started, or one finished and another still
+to hear. Its items are the books; `on-deck` says where each goes on. A
+finished book leaves it. Audiobooks are never in Continue Watching.
+
 **`DELETE /api/continue-watching/{id}`** takes a movie, or for an episode
 (in progress or next up) its whole show, out of the user's Continue
-Watching. A show's or season's id does the same; other kinds answer `400`.
+Watching. A show's or season's id does the same; an audiobook's or its
+part's takes the book out of Continue Listening; other kinds answer
+`400`.
 
 - It stays out of every Continue Watching (Home's, the libraries' hubs, the
   Plex-compatible API's On Deck and `continueWatching` hubs, the
