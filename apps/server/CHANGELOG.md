@@ -11,6 +11,17 @@ describes how they are made.
 
 ### Added
 
+- A new app permission, "Manage the server", lets Pley's own apps manage
+  libraries, accounts and invitations and show the dashboard. It is never
+  given with a TV's code. Settings, network, transcoder, backups, Live TV,
+  other administrators' accounts and one's own role stay in the web app.
+- An app manages the server only when an administrator ticks Manage the
+  server as it signs in. An account that isn't an administrator's never
+  gives an app that, nor approving requests, so becoming one later wakes
+  neither in its apps.
+- An administrator's rights in an app hold only in an app that
+  administrator allowed, on their profile picked at the device, not one a
+  cast switched to.
 - Home members can cast movies and episodes to Chromecasts, Google TVs,
   TVs with Cast built in, Apple TVs and most TVs with AirPlay 2 on the
   server's network, and control them from the remote as Pley's own
@@ -30,6 +41,9 @@ describes how they are made.
 
 ### Changed
 
+- The page where an app signs in is shorter: what the app needs, a line
+  each; managing the server as a box to tick; and one line on what it
+  can't change.
 - HDR made SDR keeps the master's brightness up to SDR's white, with the
   standard BT.2390 curve, instead of darkening the mid-tones; black and
   letterbox bars stay black.
@@ -53,6 +67,10 @@ On Intel graphics:
 
 ### Fixed
 
+- Settings → Live TV → Channels lists a source's channels when one is
+  picked, where the server answered with an error.
+- Clean up counts the old cache files and subtitles it removes, where it
+  could say there was nothing to clean up.
 - In a short window, Play on… and the web app's other menus scroll within
   it rather than running past its top or bottom.
 - HDR transcodes no longer pick a picture quality too slow to keep up, or

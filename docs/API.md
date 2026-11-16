@@ -125,8 +125,9 @@ Each endpoint table has a **Who** column:
 | `public` | anyone, without a token |
 | `user` | any signed-in user; an app's token is refused (`403 insufficient_scope`) |
 | `any app` | any signed-in user, and every app's token |
-| `library`, `play`, `playlists`, `profiles`, `requests`, `approvals`, `activity` | any signed-in user, and an app's token with that [scope](#scopes) (`HEAD` as `GET`); with `play` or `activity`, a token with either |
-| `admin` | administrators only (`403` for others), never an app's token |
+| `user`, and `server` | any signed-in user; of apps' tokens, only one allowed `server` |
+| `library`, `play`, `playlists`, `profiles`, `requests`, `approvals`, `activity` | any signed-in user, and an app's token with that [scope](#scopes) (`HEAD` as `GET`); with `play` or `activity`, `activity` or `server`, a token with either |
+| `admin` | administrators only (`403` for others); of apps' tokens, only Pley's own allowed [`server`](#scopes) on an administrator's account, on the routes that scope opens |
 | `page` | Pley's consent page only ([its endpoints](#the-consent-pages-endpoints)) |
 
 ### Headers
@@ -245,7 +246,7 @@ interface Library {
   id: Id;
   name: string;
   kind: LibraryKind;
-  paths: string[];                  // empty except for administrators (not their apps' tokens)
+  paths: string[];                  // empty except for administrators (not their apps' tokens, but for Pley's own allowed `server`)
   item_count: number;               // top-level items (movies, shows, artists) this user can see
   created_at: Timestamp;
   scanned_at: Timestamp | null;
@@ -575,10 +576,14 @@ lists carry (Kodi).
 | GET | `/api/auth/profiles` | `user` | `User[]`: home profiles this user can switch to (empty for non-home users) |
 | POST | `/api/auth/switch` | `user` | `{ user_id, pin?, password?, code?, setup_id? }` → `{ user, token?, recovery_codes? }`: this device becomes that profile |
 
-- `GET /api/auth/me` with an app's token: `User & { scope: string }`.
-  `scope` is what the app was allowed (`"library play"`); `is_admin`,
-  `all_libraries` and `max_age` are the app's rights (`is_admin` is always
-  false).
+- `GET /api/auth/me` with an app's token: `User & { scope: string,
+  account_admin?: boolean }`. `scope` is what the app was allowed
+  (`"library play"`); `is_admin`, `all_libraries` and `max_age` are the
+  app's rights (`is_admin` is always false); `account_admin`, for Pley's own
+  apps only, whether the account is an administrator who allowed the app
+  (false for an app someone else allowed, and for any app a cast switched
+  to an administrator's profile, until the profile is picked on the
+  device).
 - `PUT /api/auth/password` signs the user out everywhere but this device,
   signs out every app using the account or allowed by it, and ends the
   account's compatibility tokens.
@@ -1090,9 +1095,12 @@ A token answer:
 }
 ```
 
-`scope` is everything the app was allowed. `refresh_token` comes only for
-apps whose description lists the `refresh_token` grant type (Pley's own
-apps do). `server_id`, `proof_id` and `proof_key` let the app make sure
+`scope` is everything the app was allowed: what it asked for, less
+`server` when the person left it unticked, and less the administrator's
+rights an account that isn't an administrator's doesn't give ([the
+consent page](#the-consent-pages-endpoints)). `refresh_token`
+comes only for apps whose description lists the `refresh_token` grant
+type (Pley's own apps do). `server_id`, `proof_id` and `proof_key` let the app make sure
 later that an address still leads to this server ([Telling servers
 apart](#telling-servers-apart)); the last two are left out while the
 server can't use its `secret.key`.
@@ -1148,7 +1156,11 @@ apps allowed `profiles` move to another profile of the household. Send
 - A cast from another profile's remote carries a `switch_ticket`
   ([Casting](#casting)): sent as `ticket`, with `profile` the cast's
   `profile_id`, it stands for the PIN and the rest of the rules. It is good
-  once, for this app on the profile it acts as now.
+  once, for this app on the profile it acts as now. The PIN was given on
+  the caster's device, not this one: on an administrator's profile, an app
+  switched so has none of the administrator's rights in apps (`server`,
+  `approvals`, everyone's streams), whoever allowed it, until its next
+  switch without a ticket, a PIN check of the current profile included.
 
 | Answer | When |
 |---|---|
@@ -1277,24 +1289,32 @@ everyone, in 10 minutes, no code is looked up (`429`).
 | `playlists` | make, change and delete the profile's playlists |
 | `profiles` | switch to the household's other profiles. Pley's own apps only, since a profile's PIN is typed into the app |
 | `requests` | ask for movies and shows the libraries don't have ([Requests](#requests)), and follow the profile's requests |
-| `approvals` | approve and decline what people ask for, where the account is an administrator. Pley's own apps only; it does nothing on other accounts |
+| `approvals` | approve and decline what people ask for, where the account is an administrator. Pley's own apps only; only an administrator gives it, with the rest of what the app asks for (it can't be left out: Pley's apps without it ask to sign in again on their requests screens) |
 | `activity` | see what's playing and stop it: the profile's streams, and everyone's where the account is an administrator. Any app may be allowed it, but only Pley's own see and stop everyone's, and of those only Pley for Home Assistant asks for it |
+| `server` | see the server's dashboard and manage its libraries, accounts and invitations, where the account is an administrator: the `admin` routes listed below. Pley's own apps only, and never with a TV's code ([TVs](#tvs)); only an administrator gives it, by ticking its box on the consent page. Of Pley's apps, Android's phones ask for it |
 
 An app's token opens only the routes whose **Who** is `any app` or one of
-its scopes (`HEAD` as `GET`). Every other route answers
-`403 insufficient_scope`: administration and sign-in settings among them.
+its scopes (`HEAD` as `GET`), and with `server` the `admin` routes listed
+below. Every other route answers `403 insufficient_scope`: sign-in
+settings among them, the server's settings, and editing collections and
+titles' details.
 Name, picture (`PATCH /api/me`), password, PIN, two-step sign-in, devices,
-apps, switching by `/api/auth/switch` and all administration stay in the
-web app.
+apps and switching by `/api/auth/switch` stay in the web app, for every
+app.
 
 What apps see:
 
-- An app's token never has administrator rights. On an administrator's
-  account it sees every library without an age limit, as the account does,
-  and administers nothing: history, sessions and collections answer it as
-  they would anyone else. Two exceptions, on an administrator's account and
-  for Pley's own apps alone: one allowed `approvals` manages requests
-  (approves and declines them, marks them as added by hand, sees and
+- An app's token has no administrator rights of its own. On an
+  administrator's account it sees every library without an age limit, as
+  the account does, and administers nothing: history, sessions and
+  collections answer it as they would anyone else. Three exceptions, on an
+  administrator's account, for Pley's own apps alone, and only for an app
+  that administrator allowed, on a profile picked at the device (not an
+  app someone else allowed, nor any app a cast switched to the profile,
+  which plays as it and nothing more until a switch without a cast's
+  ticket): one allowed
+  `server` manages the server (below), one allowed `approvals` manages
+  requests (approves and declines them, marks them as added by hand, sees and
   deletes everyone's, and hears the managers' request events; see
   [Requests](#requests)), and one allowed `activity` (Pley for Home
   Assistant, the only one that asks for it) sees and stops what everyone
@@ -1305,11 +1325,59 @@ What apps see:
   only its own profile's players, and gets none of the dashboard's library
   work. Any other app allowed `activity` sees and stops its profile's own
   sessions alone.
-- Libraries' `paths` are empty, and files' `path` is the file name only.
+- One of Pley's own apps allowed `server` on an administrator's account
+  manages part of what the web app's Settings do, and these `admin` routes
+  answer it as they answer the administrator's own sign-in: libraries
+  (`POST /api/libraries`, `/api/libraries/scan`, `/api/libraries/order`,
+  `PATCH` and `DELETE /api/libraries/{id}`, `/api/libraries/{id}/scan`,
+  `/api/fs`), accounts and invitations (`/api/users`, `/api/users/{id}`
+  and its `devices`, `apps` and `two-step`, `/api/invites`, and what an
+  age limit and its exceptions are picked from, `/api/ratings/systems` and
+  `/api/labels`) and the dashboard (`/api/system`, `/api/system/resources`,
+  `/api/system/storage` and its `clean`, `/api/transcoder`). It sees and
+  stops everyone's streams as one allowed `activity` does, with the
+  dashboard's library work, everyone's history (`all`, `user_id`, and
+  removing anyone's plays) and libraries' folders (`paths`).
+  What holds the server's keys, passwords and providers' addresses stays
+  with the web app and answers `403 insufficient_scope`: the server's
+  settings and their tests (`/api/settings…`), the network and its AirPlay
+  pairings, the transcode folder, backups, the library work's schedule, a
+  Plex import (`/api/import/plex…`, which holds a Plex token), and Live
+  TV's settings and sources, and with them its lineup and tuners
+  (`/api/live/lineup`, `/api/live/tuners`). Nothing it can reach carries
+  a key or a password; in `/api/system`, the transcoder's `url` comes
+  without a user name or password. It may not change the account's own
+  name, password, PIN, two-step sign-in or role (`is_admin`, "change your
+  own administrator role in Pley's web app"), see or sign out its devices
+  and apps, disable it or delete it, and its administration ends at once
+  when the account stops being an administrator. What makes an
+  administrator, and other administrators' accounts, stay with the web app
+  too (`403`): it makes no
+  account an administrator (`is_admin: true` on `POST /api/users` or
+  `PATCH /api/users/{id}`, "an administrator is made in Pley's web app"),
+  and changes nothing of another administrator's account ("another
+  administrator's account is changed in Pley's web app"): no
+  `PATCH /api/users/{id}` of any field, no `DELETE /api/users/{id}`, and
+  no `DELETE` of its `devices`, `apps/{grant}` or `two-step`. It reads
+  them (`GET /api/users`, and their `devices` and `apps`). The role is
+  checked again in the transaction that writes a change, so an account
+  made an administrator meanwhile is refused, not changed. Accounts that
+  aren't administrators', and profiles without a password, it changes as
+  the web app does. `GET /api/auth/me` tells Pley's
+  own apps whether the account is an administrator who allowed the app
+  (`account_admin`), so one without `server` (signed in before it could
+  ask for it, or allowed with the box left unticked) can offer to sign in
+  again. A grant never gains a scope later: not by a refresh, a profile
+  switch, or the account becoming an administrator. What `activity` reaches
+  does grow then: an app the account allowed sees and stops everyone's
+  streams once it is an administrator, as above.
+- Libraries' `paths` are empty, but for one that manages the server, and
+  files' `path` is the file name only.
 - `/api/users/{id}/avatar` shows only the app's own profile, its
   household, and, to an app allowed `requests` while requests are on, the
   people named in the requests it may read: who decided its own, and for a
-  manager who made or decided any.
+  manager who made or decided any. To one that manages the server
+  (`server`), everyone's.
 - When the transcoder can't read a file, its words (which name the file)
   are replaced by Pley's own: "this title's file can't be read right now",
   and "the conversion failed" for a session's `last_error`.
@@ -1473,16 +1541,29 @@ Pley's own page uses these (Who: `page`); apps never do.
 |---|---|---|---|
 | POST | `/api/oauth/requests` | `page` | `{ query }` (the page's query without `?`, at most 8 KiB) → a consent request |
 | POST | `/api/oauth/device/verify` | `page` | `{ user_code }` (as typed) → a consent request for a TV |
-| POST | `/api/oauth/requests/{id}` | `page` | `{ allow: boolean }` → `{ continue_url }`, or `{ done: true }` for a TV's request |
+| POST | `/api/oauth/requests/{id}` | `page` | `{ allow: boolean, scopes?: string[] }` → `{ continue_url }`, or `{ done: true }` for a TV's request |
 | GET | `/api/oauth/requests/{id}/continue` | `page` | `303` to the app with the answer |
 
 **`POST /api/oauth/requests`** answers
-`{ status: "consent", id, expires_at, client: { id, host, name, first_party }, redirect: { kind: "web" | "app" | "loopback", to }, scopes }`,
+`{ status: "consent", id, expires_at, client: { id, host, name, first_party }, redirect: { kind: "web" | "app" | "loopback", to }, scopes, optional }`,
 or for a mistake that goes back to the app
 `{ status: "error", error, message, back_url, client, redirect }`, where
 `redirect` says where "Back to the app" goes. `400` for an app or return
 address Pley can't accept, `429` with too many descriptions read, `503`
 with too many sign-ins in progress.
+
+- `scopes`: what the account can give of what the app asked for. An
+  account that isn't an administrator's never gives an administrator's
+  rights (`approvals`, `server`): they're left out here and from the grant,
+  whatever is sent. They would do nothing for such an account, and wake
+  without anyone being asked if it became one. `activity` is given as
+  asked: the profile's own streams, and everyone's once the account is an
+  administrator ([What apps see](#scopes)).
+- `optional`: those of `scopes` the person may leave out: `server`, which
+  the app works without, when the app asked for it and the account is an
+  administrator's. The page shows it as a box, unticked. Everything else in
+  `scopes` is what the app needs, `approvals` included, allowed together
+  or not at all. A TV's request has none: it never asks for `server`.
 
 **`POST /api/oauth/device/verify`** answers the consent as above, with
 `redirect: { kind: "device", to: "BCDF-GHJK", device, address }`.
@@ -1503,6 +1584,16 @@ with too many sign-ins in progress.
 **`POST /api/oauth/requests/{id}`**: a TV gets its answer when it next
 asks. The same answer again gets the same reply; the other answer `409`.
 `404` when the request is over (for a TV, also once its code expired).
+
+- `scopes`, with `allow: true`: the scopes the person allows, each one the
+  app asked for. Only those in `optional` may be left out. Anything else
+  (a scope the app didn't ask for, one Pley doesn't know, more than 8
+  names, one the app needs left out) is `400` and decides nothing.
+  Without it, everything in `scopes` is allowed. A refusal's is ignored.
+- The code or the TV's tokens hold what was allowed, and the token answer's
+  `scope` says so (RFC 6749 §5.1). An account that is no longer an
+  administrator's by the time they are made gets none of an
+  administrator's rights.
 
 **`GET /api/oauth/requests/{id}/continue`** repeats while the code works and
 wasn't exchanged, and for a minute after a refusal or a mistake. After
@@ -1575,7 +1666,7 @@ Invitations have fixed limits only.
 | Method | Path | Who | What |
 |---|---|---|---|
 | GET | `/api/labels` | `admin` | `{ label, items, rules }[]`: every label on a title or in a profile's or invitation's rules, by name, with how many titles carry it and how many rules name it |
-| GET | `/api/ratings/systems` | `user` | `{ region, systems: { country, name, ratings: { name, age, kind: "film" \| "tv" \| null }[] }[]}`: the server's country (`"GB"`) and each country's ratings, youngest first, as ages are read from them. A name is the board's own, or its shortest when that's a sentence; `kind` null is for films and TV alike. |
+| GET | `/api/ratings/systems` | `user`, and `server` | `{ region, systems: { country, name, ratings: { name, age, kind: "film" \| "tv" \| null }[] }[]}`: the server's country (`"GB"`) and each country's ratings, youngest first, as ages are read from them. A name is the board's own, or its shortest when that's a sentence; `kind` null is for films and TV alike. |
 
 ## Libraries
 
@@ -3539,7 +3630,7 @@ MediaRequest, retry_at: Timestamp | null }`, and a `409 declined` is
 
 | Method | Path | Who | What |
 |---|---|---|---|
-| GET | `/api/activity` | `activity` | `{ scans: ScanStatus[], first_scans_done: ScanStatus[], sessions: SessionInfo[], analysis: AnalysisStatus \| null, seasons_pending: number, previews_pending: number, previews_running: number, library_work: LibraryWorkStatus \| null }` |
+| GET | `/api/activity` | `activity` or `server` | `{ scans: ScanStatus[], first_scans_done: ScanStatus[], sessions: SessionInfo[], analysis: AnalysisStatus \| null, seasons_pending: number, previews_pending: number, previews_running: number, library_work: LibraryWorkStatus \| null }` |
 | GET | `/api/sessions` | `play` | `PlayingSession[]`: the caller's own sessions whose players are there, oldest first ([Remote control](#remote-control)) |
 | DELETE | `/api/sessions/{id}` | `play` or `activity` | optional body `{ message?: string }` (at most 200 characters, else `400`; only Pley's own apps show it) → `204`: stops a playback session at once |
 | POST | `/api/sessions/{id}/command` | `play` | `{ command: Control, position_ms?: number, offset_ms?: number, stream_index?: number, quality?: string, volume?: number }` → `202`: sends one of the caller's own players a command ([Remote control](#remote-control)) |
@@ -3862,7 +3953,9 @@ would.
   as it is spent, from the rights the device has: a caster's profile that
   would now take its password (its PIN removed meanwhile) or whose PIN is
   locked isn't switched to, and `POST /api/auth/switch` never switches to
-  an administrator's profile with a ticket. A device keeps its 4 newest
+  an administrator's profile with a ticket. An app switched to one plays
+  as it, without the administrator's rights in apps
+  ([Apps (OAuth 2.1)](#apps-oauth-21)). A device keeps its 4 newest
   tickets. A receiver that doesn't name `switch`, or whose stream comes
   from an app other than Pley's own or one not allowed `profiles`, gets no
   such cast: it isn't offered across profiles. A progress report naming
@@ -4417,7 +4510,11 @@ interface LiveTuner {                  // a connection in use
 
 `PATCH /api/users/{id}`:
 
-- Pley always keeps one enabled administrator.
+- Pley always keeps one enabled administrator: taking the last one's role
+  or disabling the account is `400` ("Pley needs at least one
+  administrator"), as is deleting it. It is counted as the change is
+  written, so two administrators taking each other's role at once leave
+  one of them.
 - A new `password` signs the user out on every device (an administrator's
   own device stays) and in every app using the account or allowed by it,
   and ends their tokens for other apps.
@@ -4427,6 +4524,11 @@ interface LiveTuner {                  // a connection in use
   `requests_settings_changed`, so they fetch the request summary again.
 - An age limit added to an account whose `request_access` is `"ask"` makes
   it `"off"`, unless the same change sets `request_access`.
+- A change is written whole or not at all.
+
+From one of Pley's apps allowed `server`, the routes above answer `403`
+on another administrator's account, but for the `GET`s
+([What apps see](#scopes)).
 
 ## Invitations
 
@@ -4671,6 +4773,8 @@ interface SystemInfo {
   database: { ok: boolean | null; problem?: string; checked_at: Timestamp | null }; // integrity check at start
   secret_key_ok: boolean;           // the server can use its secret.key: without it, authenticator apps can't
                                     // be set up or checked (the log says why)
+  tmdb_key: boolean;                // a TMDB key is set; without one, only NFO files give movies a rating,
+                                    // and an age limit hides unrated ones
   transcode_dir: {                  // the transcoder's work folder
     in_use: string;
     next: string | null;            // the one the next start uses, when another

@@ -894,6 +894,88 @@ list every 30 s. Download progress sends no events: a list, a title's
 page, a library title or Discover's requests showing a download are read
 again every 10 s while they show.
 
+### Managing the server
+
+On phones and tablets, an administrator manages the server's libraries,
+accounts and invitations, and sees its dashboard, as Settings in the web
+app does: Me → **Manage server** lists those parts, in the web's order,
+and each does what its web page does. The server's settings, its network,
+the transcoder and Live TV's sources hold its keys and passwords, and stay
+in the web app: the server doesn't let apps read or change them. Requests'
+settings and Live TV's channels and tuners are managed there too, and the
+page says where they are. Moving from Plex, which signs in to Plex, and
+forgetting AirPlay pairings are done in the web app as well. The app asks
+for the `server` scope as it signs in, where the server offers it
+([API.md](API.md#scopes)), and the administrator gives it by ticking
+"Manage the server" on the sign-in page. An administrator whose phone
+doesn't have it (signed in before then, or with the box left unticked)
+sees Manage server offer to sign in again in the browser, and anyone else
+sees nothing of it. A sign-in with a code from another device never
+allows it, so on a phone with no browser that opens the server's page
+Manage server says that one is needed instead of offering a sign-in that
+can't give it, and offers it once a browser is installed. Nor does a
+phone that a cast switched to an administrator's profile, whoever signed
+it in: the caster gave their PIN on their own phone, and the server gives
+such a phone none of their rights over others. Manage server is back once
+the administrator switches to their profile on the phone itself, which
+takes their PIN, or signs in to it again. TVs don't manage the server:
+they sign in with a code, and the server never gives the scope to a code.
+
+- **Dashboard**: what plays, where, and what plays it (a Pley app, an app
+  through the Plex or Jellyfin API, Google Cast or AirPlay), whether it
+  plays, is paused or is buffering, its time moving on while it plays, and
+  its transcode; stopping a stream, with a message for its screen where
+  the player shows one (Pley's own apps); the server's and the machine's
+  CPU and memory over the last minutes; recently played, by everyone, with
+  removing a play; the transcoder's jobs; scans, intro detection and seek
+  previews under way; the server, its storage and the database's health,
+  and cleaning up.
+- **Libraries**: the libraries in everyone's order, dragged to reorder,
+  scanned one or all with their progress; a library's page with its kind,
+  name and folders, picked on the server or typed, then scanning, a full
+  rescan and deleting it.
+- **Users** and **Invitations**: the accounts and profiles; an account's
+  page with what an administrator changes on the web (name, password,
+  disabled, household, requests, libraries, age limit, label exceptions,
+  PIN, two-step sign-in, devices, apps and deleting); making accounts and
+  profiles; invitation links, made, copied, shared and deleted. Making an
+  administrator, taking the role away, and everything of another
+  administrator's account stay in the web app, as the server requires:
+  another administrator's page shows the account, its devices and apps,
+  with a line saying their role, sign-in, devices and account change in
+  the web app, and offers nothing to change. Otherwise a phone's token
+  could take an administrator's place in the web app, or lock the others
+  out. An administrator's page has no age limit or label exceptions, which
+  don't apply to one. An age limit is set as on the web: by a country's
+  rating, by age, or (for an account) by birthday, and titles with some
+  labels are always or never shown.
+  Without a TMDB key on the server, the page says that unrated movies are
+  hidden; the key itself is added in the web app. The administrator's own
+  name, password, PIN, two-step sign-in, devices and apps stay in Account
+  in the web app, as the server requires.
+
+A value is sent as it is chosen, as the phone's own Settings save theirs;
+what is made or set together (a library, an account, an invitation) has
+one button. What can't be undone, or takes something from an account at
+once, asks first, where the web stages it until Save: deleting, signing
+out, disabling an account and removing a PIN. The server's refusals show
+in its own words, and the page then shows what the server has; a new
+password or PIN the server refuses stays in its dialog to be changed.
+Lists that change (what plays, scans, the machine's load) are read again
+every few seconds while they show, and
+a list is read again as it shows after a page above it. When the
+dashboard can't read them, it says from what time its numbers are and
+why, until the server answers again.
+
+Once the server no longer lets the phone manage it (the role taken away
+in the web app, the scope gone, or another profile switched to), a page
+says so in place of what it read, with a way back to Me, and reads
+nothing more; Me then says what would let the phone manage it again.
+Nothing of managing the server is kept on the phone: a page reads the
+server when it opens, the libraries' list that every screen browses is
+saved without their folders, and a password or PIN typed is never kept
+in the app's saved state.
+
 ### Offline and downloads
 
 The app needs no internet. On a phone whose Wi-Fi has no internet, traffic
@@ -1306,6 +1388,9 @@ base64 -w0 pley-release.keystore   # the ANDROID_KEYSTORE_BASE64 secret
 ## Known limits
 
 - Downloads are on phones and tablets only; TVs stream everything.
+- Managing the server is on phones and tablets only, and leaves the
+  server's settings, network, transcoder, requests and Live TV to the web
+  app.
 - No Watch Next row on phones or Fire TV.
 - The TV's display mode isn't matched for live channels.
 - Videos on a USB drive are on TVs only. Their display mode isn't

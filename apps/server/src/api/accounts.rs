@@ -95,13 +95,6 @@ pub async fn rating_systems(State(state): State<AppState>, _user: AuthUser) -> A
     Ok(Json(RatingSystems { region: ratings::region(&state.db).await?, systems }))
 }
 
-async fn admins_left_after(state: &AppState, without: i64) -> ApiResult<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE is_admin = 1 AND disabled = 0 AND id != ?")
-        .bind(without)
-        .fetch_one(&state.db.read)
-        .await?)
-}
-
 // ------------------------------------------------------------------ admin: users
 
 pub async fn list_users(State(state): State<AppState>, _admin: AdminUser) -> ApiResult<Json<Vec<UserDto>>> {
@@ -168,9 +161,12 @@ fn yes() -> bool {
 
 pub async fn create_user(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    AdminUser(admin): AdminUser,
     Json(body): Json<NewUser>,
 ) -> ApiResult<(StatusCode, Json<UserDto>)> {
+    if body.is_admin && admin.app.is_some() {
+        return Err(AppError::forbidden(ADMINS_MADE_IN_THE_WEB_APP));
+    }
     let username = body.username.trim().to_owned();
     validate_username(&username)?;
     check_age(body.max_age)?;
@@ -293,7 +289,26 @@ pub async fn update_user(
     Json(body): Json<UserPatch>,
 ) -> ApiResult<Json<UserDto>> {
     let current = accounts::user(&state.db, id).await?.ok_or_else(|| AppError::not_found("user not found"))?;
-    // Check everything first: a refused update changes nothing.
+    // Check everything first: a refused update changes nothing. One's own
+    // is refused below, in its own words. Another administrator's account
+    // is looked at again as the update is written (see
+    // `not_another_administrator`): this is only the first look. Whether an
+    // administrator is left is counted only there.
+    if admin.app.is_some() && id != admin.id {
+        if current.is_admin {
+            return Err(AppError::forbidden(OTHER_ADMINS_IN_THE_WEB_APP));
+        }
+        if body.is_admin == Some(true) {
+            return Err(AppError::forbidden(ADMINS_MADE_IN_THE_WEB_APP));
+        }
+    }
+    if body.display_name.is_some() {
+        not_ones_own_from_an_app(&admin, id, "change your own name in Pley's web app")?;
+    }
+    if body.is_admin.is_some() {
+        // Whoever holds a lost phone could otherwise take its owner's role.
+        not_ones_own_from_an_app(&admin, id, "change your own administrator role in Pley's web app")?;
+    }
     if let Some(password) = &body.password {
         // One's own, from Account, which asks for the current one first and
         // signs one's other devices out: a session alone isn't enough.
@@ -302,21 +317,11 @@ pub async fn update_user(
         }
         validate_password(password, &current.username)?;
     }
-    if let Some(is_admin) = body.is_admin {
-        if !is_admin && current.is_admin && admins_left_after(&state, id).await? == 0 {
-            return Err(AppError::bad_request("Pley needs at least one administrator"));
-        }
-        if is_admin && current.managed {
-            return Err(AppError::bad_request("a managed profile can't be an administrator"));
-        }
+    if body.is_admin == Some(true) && current.managed {
+        return Err(AppError::bad_request("a managed profile can't be an administrator"));
     }
-    if body.disabled == Some(true) {
-        if id == admin.id {
-            return Err(AppError::bad_request("you can't disable your own account"));
-        }
-        if current.is_admin && admins_left_after(&state, id).await? == 0 {
-            return Err(AppError::bad_request("Pley needs at least one administrator"));
-        }
+    if body.disabled == Some(true) && id == admin.id {
+        return Err(AppError::bad_request("you can't disable your own account"));
     }
     if let Some(max_age) = body.max_age {
         check_age(max_age)?;
@@ -367,49 +372,59 @@ pub async fn update_user(
         || max_age.is_some()
         || show_labels.is_some()
         || hide_labels.is_some();
-    if let Some(password) = body.password {
-        let hash = hash_password(password).await?;
+    // Hashed before the writer is taken: Argon2 takes a while, and holding
+    // the writer holds up every other write (see `crate::db`).
+    let password_hash = match body.password {
+        Some(password) => Some(hash_password(password).await?),
+        None => None,
+    };
+    let pin_hash = match body.pin {
+        Some(Some(pin)) if !pin.is_empty() => Some(Some(hash_password(pin).await?)),
+        Some(_) => Some(None),
+        None => None,
+    };
+
+    // One transaction: an update lands whole or not at all, an app's on
+    // another account only while it isn't an administrator's, and one that
+    // takes a role or an account away only while another administrator is
+    // left.
+    let mut tx = state.db.write.begin().await?;
+    not_another_administrator(&mut tx, &admin, id).await?;
+    if body.is_admin == Some(false) || body.disabled == Some(true) {
+        not_the_last_administrator(&mut tx, id).await?;
+    }
+    if let Some(hash) = password_hash {
         sqlx::query("UPDATE users SET password_hash = ?, managed = 0 WHERE id = ?")
             .bind(hash)
             .bind(id)
-            .execute(&state.db.write)
+            .execute(&mut *tx)
             .await?;
         // Sign the user out everywhere else, and every app using the account
         // or allowed by it (an administrator's own included), with the
         // sign-ins of apps in progress: codes not exchanged yet, and TVs
         // allowed that haven't asked for their answer yet. Their tokens for
-        // other apps end too.
+        // other apps end too. The caches forget them once this commits.
         if id != admin.id {
-            sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(id).execute(&state.db.write).await?;
+            sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(id).execute(&mut *tx).await?;
         }
         state.oauth.forget_user(id);
-        state.auth.end_apps(id).await?;
-        state.auth.end_compatibility_tokens(id).await?;
+        crate::auth::grants::delete_for_within(&mut tx, id).await?;
+        crate::auth::compatibility::delete_for_within(&mut tx, id).await?;
     }
     if let Some(name) = body.display_name {
         let name = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
-        sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
-            .bind(name)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET display_name = ? WHERE id = ?").bind(name).bind(id).execute(&mut *tx).await?;
     }
+    // From an app, only `false` on an account that isn't an administrator's
+    // gets here (see the checks above): an app gives and takes no one's role.
     if let Some(is_admin) = body.is_admin {
-        sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
-            .bind(is_admin)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?").bind(is_admin).bind(id).execute(&mut *tx).await?;
     }
     if let Some(home) = body.home {
-        sqlx::query("UPDATE users SET home = ? WHERE id = ?").bind(home).bind(id).execute(&state.db.write).await?;
+        sqlx::query("UPDATE users SET home = ? WHERE id = ?").bind(home).bind(id).execute(&mut *tx).await?;
     }
     if let Some(disabled) = body.disabled {
-        sqlx::query("UPDATE users SET disabled = ? WHERE id = ?")
-            .bind(disabled)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET disabled = ? WHERE id = ?").bind(disabled).bind(id).execute(&mut *tx).await?;
         // Apps it was signing in (a code not exchanged yet, a TV allowed
         // that hasn't asked for its answer yet) get nothing, rather than
         // signed in should the account be enabled again.
@@ -418,67 +433,50 @@ pub async fn update_user(
         }
     }
     if let Some(all) = body.all_libraries {
-        sqlx::query("UPDATE users SET all_libraries = ? WHERE id = ?")
-            .bind(all)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET all_libraries = ? WHERE id = ?").bind(all).bind(id).execute(&mut *tx).await?;
     }
     if let Some(ids) = &body.library_ids {
-        accounts::set_libraries(&state.db, id, ids).await?;
+        accounts::set_libraries_within(&mut tx, id, ids).await?;
     }
     if let Some(labels) = &show_labels {
-        accounts::set_label_rules(&state.db, id, "show", labels).await?;
+        accounts::set_label_rules(&mut tx, id, "show", labels).await?;
     }
     if let Some(labels) = &hide_labels {
-        accounts::set_label_rules(&state.db, id, "hide", labels).await?;
+        accounts::set_label_rules(&mut tx, id, "hide", labels).await?;
     }
     if let Some(born) = &birth_month {
-        sqlx::query("UPDATE users SET birth_month = ? WHERE id = ?")
-            .bind(born)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET birth_month = ? WHERE id = ?").bind(born).bind(id).execute(&mut *tx).await?;
     }
     if let Some(max_age) = max_age {
-        sqlx::query("UPDATE users SET max_age = ? WHERE id = ?")
-            .bind(max_age)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET max_age = ? WHERE id = ?").bind(max_age).bind(id).execute(&mut *tx).await?;
     }
     if let Some(system) = max_age_system {
-        sqlx::query("UPDATE users SET max_age_system = ? WHERE id = ?")
-            .bind(system)
-            .bind(id)
-            .execute(&state.db.write)
-            .await?;
+        sqlx::query("UPDATE users SET max_age_system = ? WHERE id = ?").bind(system).bind(id).execute(&mut *tx).await?;
     }
-    if let Some(pin) = body.pin {
-        let hash = match pin.filter(|p| !p.is_empty()) {
-            Some(pin) => Some(hash_password(pin).await?),
-            None => None,
-        };
+    if let Some(hash) = pin_hash {
         sqlx::query("UPDATE users SET pin_hash = ?, pin_failures = 0 WHERE id = ?")
             .bind(hash)
             .bind(id)
-            .execute(&state.db.write)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(access) = body.request_access {
         sqlx::query("UPDATE users SET request_access = ? WHERE id = ?")
             .bind(access.as_str())
             .bind(id)
-            .execute(&state.db.write)
+            .execute(&mut *tx)
             .await?;
     } else if current.max_age.is_none() && matches!(max_age, Some(Some(_))) {
         // An age limit added: the account no longer asks until an
         // administrator lets it, as those made with one.
         sqlx::query("UPDATE users SET request_access = 'off' WHERE id = ? AND request_access = 'ask'")
             .bind(id)
-            .execute(&state.db.write)
+            .execute(&mut *tx)
             .await?;
     }
+    tx.commit().await?;
+    // Its sessions, and every app and compatibility token acting as it or
+    // allowed by it: what a new password ended, and what a new role changes.
     state.auth.forget_user(id);
     if sees_otherwise {
         state.events.send(ServerEvent::OwnLibrariesChanged { user_id: id });
@@ -502,6 +500,10 @@ pub async fn delete_user(
     let avatar: Option<Option<String>> =
         sqlx::query_scalar("SELECT avatar FROM users WHERE id = ?").bind(id).fetch_optional(&state.db.read).await?;
     let mut tx = state.db.write.begin().await?;
+    not_another_administrator(&mut tx, &admin, id).await?;
+    // Whoever deletes is an administrator, unless another took their role
+    // meanwhile.
+    not_the_last_administrator(&mut tx, id).await?;
     // Requests others follow stay, with a new maker.
     let told = requests::hand_down(&mut tx, id).await?;
     let result = sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(&mut *tx).await?;
@@ -598,10 +600,67 @@ pub async fn sign_out_device(
 
 pub async fn user_devices(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    AdminUser(admin): AdminUser,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Vec<DeviceDto>>> {
+    not_ones_own_from_an_app(&admin, id, "see your own devices in Pley's web app")?;
     Ok(Json(devices_of(&state, id, None).await?))
+}
+
+/// What makes an administrator, and other administrators' accounts, stay
+/// with Pley's web app: an app that manages the server makes no account
+/// one, and changes nothing of another administrator's account (their role,
+/// password, PIN, two-step sign-in, devices and apps, name, libraries,
+/// whether it is disabled, the account itself). Either would let whoever
+/// holds the app's token take an administrator's place in the web app,
+/// where the server's keys and passwords are (a PIN set while the role is
+/// away, then the role given back), or lock the other administrators out.
+pub(super) const ADMINS_MADE_IN_THE_WEB_APP: &str = "an administrator is made in Pley's web app";
+pub(super) const OTHER_ADMINS_IN_THE_WEB_APP: &str = "another administrator's account is changed in Pley's web app";
+
+/// Refuses an app that manages the server on another administrator's
+/// account (see [`OTHER_ADMINS_IN_THE_WEB_APP`]); anyone else goes on.
+/// Called first in the write transaction that then changes the account:
+/// SQLite's transactions are serializable, and the server's one write
+/// connection runs no other write until this one ends, so the role read
+/// here is the one every write after it lands on. An account made an
+/// administrator after a handler's first look is refused here, not changed.
+pub(super) async fn not_another_administrator(
+    conn: &mut sqlx::SqliteConnection,
+    by: &AuthUser,
+    id: i64,
+) -> ApiResult<()> {
+    if by.app.is_none() || id == by.id {
+        return Ok(());
+    }
+    let is_admin: Option<bool> =
+        sqlx::query_scalar("SELECT is_admin FROM users WHERE id = ?").bind(id).fetch_optional(&mut *conn).await?;
+    if is_admin == Some(true) { Err(AppError::forbidden(OTHER_ADMINS_IN_THE_WEB_APP)) } else { Ok(()) }
+}
+
+/// Refuses what would leave Pley without an enabled administrator: account
+/// `id`, one now, made not one, disabled or deleted while no other is left.
+/// Called in the write transaction that then makes the change, as
+/// [`not_another_administrator`] is, for the same reason: two
+/// administrators taking each other's role at once each count the other as
+/// they start, and the second to be written finds that it would leave none.
+async fn not_the_last_administrator(conn: &mut sqlx::SqliteConnection, id: i64) -> ApiResult<()> {
+    let (is_admin, others): (bool, i64) = sqlx::query_as(
+        "SELECT COALESCE((SELECT is_admin FROM users WHERE id = ?), 0),
+                (SELECT COUNT(*) FROM users WHERE is_admin = 1 AND disabled = 0 AND id != ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .fetch_one(&mut *conn)
+    .await?;
+    if is_admin && others == 0 { Err(AppError::bad_request("Pley needs at least one administrator")) } else { Ok(()) }
+}
+
+/// One's own name, devices and apps stay with Pley's web app (Account), as
+/// for every app, and so does one's own administrator role: one that
+/// manages the server reaches them on others' accounts only.
+pub(super) fn not_ones_own_from_an_app(admin: &AuthUser, id: i64, words: &'static str) -> ApiResult<()> {
+    if admin.app.is_some() && id == admin.id { Err(AppError::bad_request(words)) } else { Ok(()) }
 }
 
 /// Sign a user out on every device and in every app, apps they were signing
@@ -615,8 +674,12 @@ pub async fn sign_out_everywhere(
     if id == admin.id {
         return Err(AppError::bad_request("sign yourself out from your account page instead"));
     }
+    let mut tx = state.db.write.begin().await?;
+    not_another_administrator(&mut tx, &admin, id).await?;
     state.oauth.forget_user(id);
-    state.auth.sign_out_everywhere(id, None).await?;
+    crate::auth::sign_out_within(&mut tx, id, None).await?;
+    tx.commit().await?;
+    state.auth.forget_user(id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -833,8 +896,9 @@ pub async fn delete_avatar(State(state): State<AppState>, user: AuthUser) -> Api
 
 pub async fn avatar(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> ApiResult<Response> {
     // Apps see their own profile's picture, those of its household, and
-    // those of the people named in the requests they may read.
-    if user.app.is_some() && id != user.id {
+    // those of the people named in the requests they may read; one that
+    // manages the server, everyone's, as its list of accounts shows them.
+    if user.app.is_some() && !user.administers() && id != user.id {
         let household: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM users me, users them
                             WHERE me.id = ? AND them.id = ? AND me.home AND them.home AND NOT them.disabled)",
