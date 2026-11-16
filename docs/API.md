@@ -3992,7 +3992,8 @@ would.
   playing within 3 minutes is stopped and answers `cast_failed`, so a
   client (and a reverse proxy before Pley) waits longer than that, 4
   minutes say, for the answer;
-  `404` for a device not listed lately, a caller
+  `404` for a device the server doesn't find (one it no longer keeps is
+  looked for again first, as above), a caller
   who isn't a home member, an app other than Pley's own, another
   profile's `profile_id`, a `device_id`
   or an item the caller can't see; `400` for a `start_ms` out of range or
