@@ -568,9 +568,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !queueRef.current.length) return;
+    // Ended (a sleep timer stopped it at the end of a part, or the queue
+    // ran out), its session is over: Play goes on to the next one, or
+    // starts the last again, with a session of its own.
+    if (audio.ended) {
+      const i = indexRef.current;
+      goTo(i + 1 < queueRef.current.length ? i + 1 : i);
+      return;
+    }
     if (audio.paused) void audio.play().catch(() => undefined);
     else audio.pause();
-  }, [queueRef]);
+  }, [goTo, indexRef, queueRef]);
 
   const pause = useCallback(() => {
     audioRef.current?.pause();

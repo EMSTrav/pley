@@ -79,6 +79,9 @@ function Controls() {
       <button type="button" onClick={() => player.setSleep({ itemId: 31, atMs: 1_800_000 })}>
         Sleep at end
       </button>
+      <button type="button" onClick={() => player.toggle()}>
+        Toggle
+      </button>
       <span data-testid="book">{String(player.book)}</span>
       <span data-testid="sleep">{player.sleep ? "on" : "off"}</span>
     </>
@@ -177,6 +180,11 @@ describe("AudioPlayer with an audiobook", () => {
     expect(screen.getByTestId("sleep")).toHaveTextContent("off");
     await new Promise((r) => setTimeout(r, 50));
     expect(starts(requests).map((r) => (r.body as { item_id: number }).item_id)).toEqual([31]);
+
+    // Play then goes on to the next part, with a session of its own.
+    Object.defineProperty(audio, "ended", { configurable: true, get: () => true });
+    await userEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    await waitFor(() => expect(starts(requests).map((r) => (r.body as { item_id: number }).item_id)).toEqual([31, 32]));
   });
 
   it("runs the bar through the chapter playing, named under the book", async () => {
