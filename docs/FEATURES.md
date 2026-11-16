@@ -44,10 +44,12 @@ the Plex- and Jellyfin-compatible APIs don't get them.
 - A book's parts play by disc and number (their tags', or the one their
   files' names begin with), then in their files' names' order, numbers
   read as numbers: `Part 2` before `Part 10`.
-- The files' tags win over their folders: `album` is the book,
-  `album_artist` or `artist` its authors (`;`, `&` or `/` between
-  several), `composer` or `narrator` its narrators, `series` and
-  `series-part` its series, `description` its summary.
+- A book is what its first part says, by its tags, which win over its
+  folders: `album` is the book, `album_artist` or `artist` its authors
+  (`;`, `&` or `/` between several), `composer` or `narrator` its
+  narrators, `series` and `series-part` its series, `description` or
+  `synopsis` its summary (`comment` without them). A scan reads them
+  again when the book's files change.
 - The cover is a picture named after an `.m4b` beside it, `cover.jpg` or
   `folder.jpg` in the book's folder, or else the one inside its files.
   Books side by side in their author's or their series' folder don't take

@@ -699,7 +699,9 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         series_index,
         year,
         genre: tag(tags, &["genre"]).map(str::to_owned),
-        summary: tag(tags, &["description", "synopsis", "comment"]).map(str::to_owned),
+        // A comment is often a ripper's or a shop's note: a summary only
+        // when the file has no other.
+        summary: tag(tags, &["description", "synopsis"]).or_else(|| tag(tags, &["comment"])).map(str::to_owned),
         book_key,
         book_dir,
         part_title,
@@ -1074,6 +1076,17 @@ mod tests {
         assert_eq!(one.book_key, two.book_key);
         assert_eq!((one.disc, two.disc, one.part), (Some(1), Some(2), Some(1)));
         assert_eq!((one.authors.as_slice(), one.series), (["Author D".to_owned()].as_slice(), None));
+    }
+
+    #[test]
+    fn a_summary_is_a_description_before_a_comment() {
+        let summary = |pairs: &[(&str, &str)]| {
+            parse_audiobook(Path::new("/books/Book/01.mp3"), Path::new("/books"), &tags(pairs)).summary
+        };
+        assert_eq!(summary(&[("comment", "A note."), ("description", "About it.")]).as_deref(), Some("About it."));
+        assert_eq!(summary(&[("comment", "A note."), ("synopsis", "About it.")]).as_deref(), Some("About it."));
+        assert_eq!(summary(&[("comment", "A note."), ("description", " ")]).as_deref(), Some("A note."));
+        assert_eq!(summary(&[]), None);
     }
 
     #[test]

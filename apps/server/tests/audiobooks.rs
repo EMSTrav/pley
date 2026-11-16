@@ -73,6 +73,13 @@ fn tagged(app: &TestApp, rel: &str, tags: Value) {
     std::fs::write(path, tags.to_string()).unwrap();
 }
 
+/// Scans a library again, and waits for the scan to finish.
+async fn rescan(app: &TestApp, token: &str, lib: i64) {
+    let r = app.post(&format!("/api/libraries/{lib}/scan"), token, json!({})).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
+    app.wait_for_scans().await;
+}
+
 /// A library's books by title: their writers, their series, and their
 /// parts in order.
 async fn shelf(app: &TestApp, token: &str, lib: i64) -> BTreeMap<String, (Value, Value, Vec<String>)> {
@@ -376,4 +383,43 @@ async fn parts_play_in_their_names_order() {
     let parts = app.get(&format!("/api/items/{}/children", ids["Book Ten"]), &token).await;
     assert_eq!(titles(&parts.body["items"]), ["Zebra", "Apple"]);
     assert!(ids.contains_key("10.20.30"), "{ids:?}");
+}
+
+/// A book is what its first part says: a file added later without tags
+/// doesn't name it from its folders, and when its first part goes, the
+/// next one says what it is, unless its details are locked.
+#[tokio::test]
+async fn a_book_is_what_its_first_part_says() {
+    let (app, token) = tagged_app().await;
+    let tags = |summary: &str| json!({"album": "Tagged Title", "artist": "Author G", "description": summary});
+    tagged(&app, "books/Author F/Book Eleven/01.mp3", tags("From the first part."));
+    tagged(&app, "books/Author F/Book Eleven/02.mp3", tags("From the second part."));
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+    let book = app.ids(lib, &token).await["Tagged Title"];
+    let details = || async {
+        let item = app.get(&format!("/api/items/{book}"), &token).await.body;
+        (item["title"].clone(), item["book"]["authors"].clone(), item["summary"].clone())
+    };
+    let first = (json!("Tagged Title"), json!(["Author G"]), json!("From the first part."));
+    assert_eq!(details().await, first);
+
+    app.media_file("books/Author F/Book Eleven/03.mp3", 512);
+    rescan(&app, &token, lib).await;
+    assert_eq!(app.children(book, &token).await.len(), 3);
+    assert_eq!(details().await, first, "a part added later doesn't rename the book");
+
+    std::fs::remove_file(app.media.path().join("books/Author F/Book Eleven/01.mp3")).unwrap();
+    rescan(&app, &token, lib).await;
+    assert_eq!(details().await, (json!("Tagged Title"), json!(["Author G"]), json!("From the second part.")));
+
+    // Locked, its details stay when only the untagged part is left.
+    sqlx::query("UPDATE items SET metadata_locked = 1 WHERE id = ?")
+        .bind(book)
+        .execute(&app.state.db.write)
+        .await
+        .unwrap();
+    std::fs::remove_file(app.media.path().join("books/Author F/Book Eleven/02.mp3")).unwrap();
+    rescan(&app, &token, lib).await;
+    assert_eq!(app.children(book, &token).await.len(), 1);
+    assert_eq!(details().await, (json!("Tagged Title"), json!(["Author G"]), json!("From the second part.")));
 }

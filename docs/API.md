@@ -330,7 +330,7 @@ interface ItemDetail extends ItemSummary {
   book?: Book;                      // audiobooks only
 }
 
-interface Book {                    // from the files' tags, else their folders (docs/FEATURES.md, "Audiobooks")
+interface Book {                    // from its first part's tags, else its folders (docs/FEATURES.md, "Audiobooks")
   authors: string[];                // "Unknown Author" when nothing says
   narrators: string[];              // may be empty
   series: string | null;            // "Series X"
