@@ -13,12 +13,14 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use parking_lot::Mutex;
+use pley_transcoder_api::{MediaStream, StreamKind};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::player::{Ended, Event, Failure, Media, Player, State as Playing, Subtitle};
 use super::{Found, Protocol};
 use crate::auth::{AuthUser, CurrentToken};
+use crate::catalog::ItemRow;
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
 use crate::network::{Kind, Listener};
@@ -76,12 +78,16 @@ pub struct Choice {
 /// `cast_within`) ends as one the device didn't play.
 pub async fn start(state: &AppState, user: &AuthUser, device: Found, mut cast: Cast) -> ApiResult<()> {
     let deadline = tokio::time::Instant::now() + state.config.cast_within;
+    let row = crate::api::items::item_or_404(state, user.id, cast.item_id).await?;
     // A cast that names no place starts where Play would, so it doesn't
     // start over and save the beginning over the place someone left off.
     if cast.start_ms.is_none() {
-        let row = crate::api::items::item_or_404(state, user.id, cast.item_id).await?;
         cast.start_ms = Some(crate::api::items::resume_ms(&row));
     }
+    // A device that shows no text subtitles beside a file played as it is
+    // (AirPlay's) gets a stream when the cast shows some: its playlist
+    // names them.
+    let stream = !device.protocol.shows_subtitles(false) && shows_text_subtitles(state, user.id, &row, &cast).await?;
     let base = base_url(state, device.address).ok_or_else(|| {
         AppError::ConflictAs("cast_unreachable", "Pley doesn't listen on an address the device can reach".to_owned())
     })?;
@@ -121,8 +127,17 @@ pub async fn start(state: &AppState, user: &AuthUser, device: Found, mut cast: C
     // The session of Google's player that a try loaded into, on a Cast
     // device: the one to close should the cast not play.
     let launched = Mutex::new(None);
-    let attempt =
-        Attempt { state, user, device: &device, cast: &cast, base: &base, ours: &ours, deadline, launched: &launched };
+    let attempt = Attempt {
+        state,
+        user,
+        device: &device,
+        cast: &cast,
+        stream,
+        base: &base,
+        ours: &ours,
+        deadline,
+        launched: &launched,
+    };
     let played = match (attempt.play(&first).await, fallback) {
         (Err(Tried::Refused), Some(basic)) => {
             tracing::info!("a device refused its stream ({first}): it is sent the basic one");
@@ -204,6 +219,8 @@ struct Attempt<'a> {
     user: &'a AuthUser,
     device: &'a Found,
     cast: &'a Cast,
+    /// It plays as a stream, never as its file is.
+    stream: bool,
     base: &'a str,
     /// Cancelled when a newer cast to the device takes this one's place.
     ours: &'a CancellationToken,
@@ -226,6 +243,7 @@ impl Attempt<'_> {
             "audio_index": cast.audio_index,
             "subtitle_index": cast.subtitle_index,
             "caps": caps,
+            "mode": if self.stream { "remux" } else { "auto" },
             // One cast at a time on a device: a new one ends the last, once
             // it plays.
             "client_id": device.key(),
@@ -383,6 +401,24 @@ impl Attempt<'_> {
             }
         }
     }
+}
+
+/// Whether `cast` shows text subtitles: those the remote picked, else those
+/// the user's choices pick for the title `row`, as its session starts with.
+async fn shows_text_subtitles(state: &AppState, user_id: i64, row: &ItemRow, cast: &Cast) -> ApiResult<bool> {
+    let files = crate::catalog::files_for_item(&state.db, row.id).await?;
+    // The file a session plays when none is named.
+    let Some(file) = files.first() else {
+        return Ok(false);
+    };
+    let streams = file.streams();
+    let index = match cast.subtitle_index {
+        Some(index) => Some(index),
+        None => crate::api::playback::subtitles_picked(state, user_id, row, &streams).await?,
+    };
+    // Text unless the file says otherwise, as the session's tracks are.
+    let text = |s: &MediaStream| s.kind == StreamKind::Subtitle && s.text_based != Some(false);
+    Ok(index.is_some_and(|index| streams.iter().any(|s| s.index == index && text(s))))
 }
 
 /// The devices on the server's network that a cast can send to Pley's web

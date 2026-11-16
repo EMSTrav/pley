@@ -3957,8 +3957,9 @@ would.
   H.264 up to 1080p with stereo AAC, in HLS of MPEG-TS. An AirPlay player
   shows only subtitles its stream's playlist names: picture subtitles are
   burned in, and a text track goes in the playlist (the keyed
-  `subtitled-{index}.m3u8`) when the title plays as a stream. One played
-  as its file is shows none, and the session says so. The
+  `subtitled-{index}.m3u8`). A cast that shows a text track (the one
+  picked, else the one the caster's choices pick) is therefore a stream,
+  copied as it is where it can be, never the file played as it is. The
   session has the controls `play`, `pause`, `seek` and `skip`; the
   device keeps its volume to itself. It ends as a Cast device's does.
 

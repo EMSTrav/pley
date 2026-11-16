@@ -152,9 +152,20 @@ async fn subtitles_shown(
     if !streams.iter().any(|s| s.kind == StreamKind::Subtitle) {
         return Ok(None);
     }
+    Ok(Some(subtitles_picked(state, user_id, row, streams).await?.unwrap_or(-1)))
+}
+
+/// The subtitles of `streams` that the user's choices pick for `row`
+/// (players start with them), `None` for none.
+pub(crate) async fn subtitles_picked(
+    state: &AppState,
+    user_id: i64,
+    row: &ItemRow,
+    streams: &[MediaStream],
+) -> ApiResult<Option<i64>> {
     let pref = streams::load(&state.db, user_id, streams::scope(row)).await?;
     let defaults = streams::defaults(&state.db, user_id).await?;
-    Ok(Some(streams::resolve(pref.as_ref(), &defaults, streams, None).subtitle.unwrap_or(-1)))
+    Ok(streams::resolve(pref.as_ref(), &defaults, streams, None).subtitle)
 }
 
 pub async fn start(
@@ -210,11 +221,7 @@ pub async fn start(
     let picture = if decision.method != Method::Direct && may_draw_pictures(&streams, &req.caps) {
         let chosen = match req.subtitle_index {
             Some(_) => None,
-            None => {
-                let pref = streams::load(&state.db, user.id, streams::scope(&row)).await?;
-                let defaults = streams::defaults(&state.db, user.id).await?;
-                streams::resolve(pref.as_ref(), &defaults, &streams, None).subtitle
-            }
+            None => subtitles_picked(&state, user.id, &row, &streams).await?,
         };
         picture_to_prepare(&streams, &req, &decision, chosen)
     } else {
