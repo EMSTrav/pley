@@ -424,6 +424,25 @@ async fn a_book_is_what_its_first_part_says() {
     assert_eq!(details().await, (json!("Tagged Title"), json!(["Author G"]), json!("From the second part.")));
 }
 
+/// A book a scan made but stopped before reading (the server went away
+/// part way) is read by the next scan, though none of its files changed.
+#[tokio::test]
+async fn a_book_a_stopped_scan_left_unread_is_read_next_time() {
+    let (app, token) = tagged_app().await;
+    tagged(&app, "books/Author H/Book Fifteen/01.mp3", json!({"album": "Book Fifteen", "artist": "Author H"}));
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+    let book = app.ids(lib, &token).await["Book Fifteen"];
+    // As `Writer::book` leaves a new book until the scan reads it.
+    sqlx::query("UPDATE items SET authors = NULL, narrators = NULL, series = NULL, summary = NULL WHERE id = ?")
+        .bind(book)
+        .execute(&app.state.db.write)
+        .await
+        .unwrap();
+    rescan(&app, &token, lib).await;
+    let item = app.get(&format!("/api/items/{book}"), &token).await.body;
+    assert_eq!(item["book"]["authors"], json!(["Author H"]));
+}
+
 /// A book's series is read from the tags Libation, tone and
 /// Audiobookshelf write: `part` for its place, and `grouping`.
 #[tokio::test]

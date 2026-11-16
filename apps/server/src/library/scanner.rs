@@ -657,6 +657,17 @@ impl Scanner {
         tx.commit().await?;
         if kind == LibraryKind::Audiobooks {
             books.extend(writer.containers.values());
+            // And books a scan stopped part way made but never read: their
+            // files are unchanged since, so nothing above names them.
+            // `read_books` always gives a book its writers.
+            let unread: Vec<i64> = sqlx::query_scalar(
+                "SELECT id FROM items
+                 WHERE library_id = ? AND kind = 'audiobook' AND authors IS NULL AND metadata_locked = 0",
+            )
+            .bind(library_id)
+            .fetch_all(&self.db.read)
+            .await?;
+            books.extend(unread);
             self.read_books(lib, books).await?;
         }
         writing += phase.elapsed();
