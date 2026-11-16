@@ -88,9 +88,7 @@ pub async fn start(state: &AppState, user: &AuthUser, device: Found, mut cast: C
     // (AirPlay's) gets a stream when the cast shows some: its playlist
     // names them.
     let stream = !device.protocol.shows_subtitles(false) && shows_text_subtitles(state, user.id, &row, &cast).await?;
-    let base = base_url(state, device.address).ok_or_else(|| {
-        AppError::ConflictAs("cast_unreachable", "Pley doesn't listen on an address the device can reach".to_owned())
-    })?;
+    let base = base_url(state, device.address).ok_or_else(unreachable)?;
     let choosing = async {
         match device.protocol {
             Protocol::Cast => Ok(crate::cast::device::choose(state, &device).await),
@@ -425,12 +423,11 @@ async fn shows_text_subtitles(state: &AppState, user_id: i64, row: &ItemRow, cas
 
 /// The devices on the server's network that a cast can send to Pley's web
 /// port ([`base_url`]), as [`super::NearbyDevices::listed`] finds them.
-/// None, without a look, while Pley listens only on this computer (behind a
-/// reverse proxy), where a cast to any would only fail. The log says once
-/// that devices were left out.
+/// None, without a look, while no device can reach Pley ([`reaches_pley`]).
+/// The log says once that devices were left out.
 pub async fn reachable(state: &AppState) -> Vec<Found> {
     let fixed = state.config.cast_fixed.found();
-    if state.config.cast_fixed.server.is_none() && !listens_on_network(&state.network.listeners()) {
+    if !reaches_pley(state) {
         say_unreachable(state);
         return Vec::new();
     }
@@ -450,6 +447,20 @@ fn say_unreachable(state: &AppState) {
              listens on no address of their network (Settings → Network)"
         );
     }
+}
+
+/// Whether a device on the network may reach Pley's web port at all: Pley
+/// listens beyond this computer, or was told where the device reaches it.
+/// Not while it listens on this computer alone (behind a reverse proxy
+/// there), where a cast to any device would only fail: Pley doesn't look
+/// for them then, to list them, cast or pair.
+pub fn reaches_pley(state: &AppState) -> bool {
+    state.config.cast_fixed.server.is_some() || listens_on_network(&state.network.listeners())
+}
+
+/// The answer to a cast to a device that can't reach Pley's web port.
+pub fn unreachable() -> AppError {
+    AppError::ConflictAs("cast_unreachable", "Pley doesn't listen on an address the device can reach".to_owned())
 }
 
 /// Whether Pley's web port listens beyond this computer: on every address,

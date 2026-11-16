@@ -352,6 +352,17 @@ async fn devices_that_cant_reach_pley_arent_listed() {
     // A remote that listed it before is told why it can't cast there.
     let cast = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
     assert_eq!((cast.status, cast.body["code"].as_str()), (StatusCode::CONFLICT, Some("cast_unreachable")));
+    // At once, without looking for the device: a device no look would find
+    // is told the same, and a pairing finds none.
+    let body = json!({"item_id": w.film});
+    let elsewhere = w.app.post("/api/remote/devices/cast:elsewhere/cast", &w.admin, body).await;
+    assert_eq!((elsewhere.status, elsewhere.body["code"].as_str()), (StatusCode::CONFLICT, Some("cast_unreachable")));
+    let pairing = w.app.post("/api/remote/devices/cast:dev/pairing", &w.admin, json!({})).await;
+    assert_eq!(pairing.status, StatusCode::NOT_FOUND, "{}", pairing.text());
+    // Someone who may not reach the devices learns nothing more.
+    let (friend, _) = w.app.user(&w.admin, "friend", json!({"home": false})).await;
+    let refused = w.app.post("/api/remote/devices/cast:dev/cast", &friend, json!({"item_id": w.film})).await;
+    assert_eq!(refused.status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

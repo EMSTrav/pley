@@ -3977,9 +3977,10 @@ would.
   while discovery is off (Settings → Network, `--no-discovery`), and then
   lists none, nor from a Docker bridge network, which the announcements
   don't reach. It lists them only while its web port listens on an
-  address they reach, which a cast hands them: none, and no look, while
-  Pley listens on its own computer alone (behind a reverse proxy there),
-  and the log says so once. A Cast device at the address of a receiver
+  address they reach, which a cast hands them: while Pley listens on its
+  own computer alone (behind a reverse proxy there) it lists none and
+  doesn't look, for a cast or a pairing either, and the log says so once.
+  A Cast device at the address of a receiver
   in the same list that takes `item` is left out: it is the same TV, and
   the Pley app stands for it. One whose Pley app is on a profile the
   caller can't cast to stays listed. A cast there names a movie or an episode,
@@ -3998,7 +3999,9 @@ would.
   anything but a movie or an episode, `409` `{ code:
   "cast_failed" }` when the device didn't play it, and `409` `{ code:
   "cast_unreachable" }` when Pley doesn't listen on an address the device
-  can reach. The server plays it on the device itself: it starts a
+  can reach (at once, for a home member's cast to any device, while Pley
+  listens on its own computer alone). The server plays it on the device
+  itself: it starts a
   session of the caller's as a player would, with keyed addresses, which it
   gives to Google's own player on the device. What the stream carries goes
   by the device's model, as Cast devices don't say what they decode: every
@@ -4046,9 +4049,10 @@ would.
   /api/network/airplay/{device_id}`) or the device is unpaired or reset
   (its next cast then answers `409` `pairing_needed`, and the new pairing
   replaces the old). A device open to everyone on its network needs no PIN.
-  The pairing route answers `404` as a cast does, `409` `{ code:
-  "not_pairable" }` for a device that isn't AirPlay, `400` for a PIN
-  that isn't 4 digits, `403` `{ code: "wrong_pin" }` for a wrong one
+  The pairing route answers `404` as a cast does (and for any device
+  while Pley listens on its own computer alone, where no cast plays),
+  `409` `{ code: "not_pairable" }` for a device that isn't AirPlay, `400`
+  for a PIN that isn't 4 digits, `403` `{ code: "wrong_pin" }` for a wrong one
   (counted as a profile PIN's: `429` after 5 in 15 minutes), `429` when
   the device takes no other try yet or was asked for a PIN in the last
   3 seconds (each ask shows a new one), and `409` `{ code:

@@ -1068,15 +1068,25 @@ const WITH_TRACKS: [&str; 2] = ["movie", "episode"];
 const CASTABLE: [&str; 7] = ["movie", "episode", "show", "season", "track", "album", "artist"];
 
 /// The device on the server's network of `id`, as the household's lists
-/// show it: to a home member only, as [`reaches_nearby`] says. One the
-/// remote listed longer ago than the server keeps devices is looked for
-/// again; no one else makes the server look.
-async fn nearby_device(state: &AppState, user: &AuthUser, id: &str) -> ApiResult<crate::nearby::Found> {
+/// show it: to a home member only, as [`reaches_nearby`] says, and only
+/// while a device can reach Pley ([`crate::nearby::casts::reaches_pley`]):
+/// otherwise `unreachable` answers, without a look. One the remote listed
+/// longer ago than the server keeps devices is looked for again; no one
+/// else makes the server look.
+async fn nearby_device(
+    state: &AppState,
+    user: &AuthUser,
+    id: &str,
+    unreachable: fn() -> AppError,
+) -> ApiResult<crate::nearby::Found> {
     let everyone = crate::accounts::users(&state.db).await?;
     let home = everyone.iter().any(|u| u.id == user.id && u.home);
     let unknown = || AppError::not_found("no such device");
     if !reaches_nearby(user, home) {
         return Err(unknown());
+    }
+    if !crate::nearby::casts::reaches_pley(state) {
+        return Err(unreachable());
     }
     let discovery = state.network.wanted().discovery;
     state.nearby.device(id, state.config.cast_fixed.found(), discovery).await.ok_or_else(unknown)
@@ -1104,7 +1114,9 @@ pub async fn pair(
     use crate::airplay::pairing::Failed;
     use axum::response::IntoResponse;
     let Json(body) = body.map_err(|err| AppError::bad_request(err.body_text()))?;
-    let device = nearby_device(&state, &user, &id).await?;
+    // No cast plays while no device can reach Pley: there is nothing to
+    // pair with then, as the lists show.
+    let device = nearby_device(&state, &user, &id, || AppError::not_found("no such device")).await?;
     if device.protocol != crate::nearby::Protocol::AirPlay {
         return Err(AppError::ConflictAs("not_pairable", "this device needs no pairing".to_owned()));
     }
@@ -1147,7 +1159,7 @@ pub async fn pair(
 /// [`crate::airplay`]): a movie or an
 /// episode, by a home member, played by the server on the device.
 async fn cast_to_device(state: &AppState, user: &AuthUser, id: &str, body: Cast) -> ApiResult<StatusCode> {
-    let device = nearby_device(state, user, id).await?;
+    let device = nearby_device(state, user, id, crate::nearby::casts::unreachable).await?;
     if body.profile_id.is_some_and(|p| p != user.id) || body.device_id.is_some() {
         return Err(AppError::not_found("no such device"));
     }
