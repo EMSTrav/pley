@@ -219,7 +219,9 @@ struct Attempt<'a> {
     user: &'a AuthUser,
     device: &'a Found,
     cast: &'a Cast,
-    /// It plays as a stream, never as its file is.
+    /// It asks for a stream, whose playlist names the subtitles shown: the
+    /// file plays as it is, without them, should none start
+    /// ([`start_session`]).
     stream: bool,
     base: &'a str,
     /// Cancelled when a newer cast to the device takes this one's place.
@@ -482,8 +484,11 @@ fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
 /// players start one. A stream refused past the server's limit on streams
 /// is tried again once ending what the device plays makes room for it
 /// ([`end_cast_in_the_way`]); a refusal for any other reason leaves what
-/// plays there be. Once the cast's attempt has `abandoned` it, nothing is
-/// ended to make room.
+/// plays there be. A stream asked for only for the subtitles (`Remux`)
+/// that doesn't start, for whatever reason, gives way to what Play would
+/// start, the file played as it is where the device plays it. Once the
+/// cast's attempt has `abandoned` it, nothing is ended to make room, nor
+/// started again.
 async fn start_session(
     state: AppState,
     user: AuthUser,
@@ -517,12 +522,12 @@ async fn start_session(
     };
     match started {
         // A stream asked for only so that the device shows the subtitles
-        // (AirPlay's), which the server can't make now: the file plays as
-        // it is, without them, rather than nothing.
-        Err(AppError::Unavailable(_) | AppError::StreamsFull(..) | AppError::ConflictAs("video_not_converted", _))
-            if request.mode == PlaybackMode::Remux && !abandoned.is_cancelled() =>
-        {
-            tracing::info!("a cast's subtitles need a stream the server can't make now: it plays without them");
+        // (AirPlay's), which the server didn't make, whatever went wrong:
+        // the file plays as it is, without them, as it did before such a
+        // cast asked for a stream, rather than nothing. What would keep the
+        // file from playing too (an item gone) fails it again.
+        Err(err) if request.mode == PlaybackMode::Remux && !abandoned.is_cancelled() => {
+            tracing::info!("a cast's subtitles need a stream the server couldn't make ({err}): it plays without them");
             request.mode = PlaybackMode::Auto;
             start(request).await
         }
@@ -812,5 +817,107 @@ mod tests {
         assert!(!listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", Some("in use"))]));
         assert!(listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", None)]));
         assert!(listens_on_network(&[listener(Kind::Web, "192.168.1.10:7539", None)]));
+    }
+
+    #[tokio::test]
+    async fn a_stream_asked_for_the_subtitles_falls_back_to_the_file_whatever_failed() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicU16;
+
+        use axum::routing::{get, post};
+        // A transcoder that answers every job with the status it is given.
+        let failing = Arc::new(AtomicU16::new(500));
+        let status = failing.clone();
+        let answer = move || {
+            let status = status.load(Ordering::SeqCst);
+            async move { axum::http::StatusCode::from_u16(status).unwrap() }
+        };
+        let info = pley_transcoder_api::TranscoderInfo {
+            name: "pley-transcoder".into(),
+            version: "9.9.9".into(),
+            api_version: pley_transcoder_api::API_VERSION,
+            ..Default::default()
+        };
+        let transcoder = axum::Router::new()
+            .route("/v1/info", get(move || async move { Json(info) }))
+            .route("/v1/jobs", post(answer));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, transcoder).await.unwrap() });
+        let dir = crate::testing::tempdir();
+        let mut config = crate::config::Config::for_data_dir(dir.path());
+        config.transcoder_url = Some(format!("http://{address}"));
+        config.transcoder_token = Some("secret".into());
+        let state = AppState::init(config).await.unwrap();
+        state.transcoder.start();
+        assert!(state.transcoder.wait_ready(Duration::from_secs(10)).await);
+        // A film in H.264 and AAC in MP4, which an AirPlay device plays as
+        // it is, with English text subtitles.
+        let media = serde_json::json!({
+            "container": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration_ms": 7_200_000,
+            "streams": [
+                {"index": 0, "kind": "video", "codec": "h264", "width": 1920, "height": 1080, "pix_fmt": "yuv420p"},
+                {"index": 1, "kind": "audio", "codec": "aac", "channels": 2, "language": "eng", "default": true},
+                {"index": 2, "kind": "subtitle", "codec": "mov_text", "language": "eng", "text_based": true},
+            ],
+        });
+        for sql in [
+            "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (1, 'sam', '', 1, 0)",
+            "INSERT INTO libraries (id, name, kind, paths, created_at) VALUES (1, 'Movies', 'movies', '[]', 0)",
+            "INSERT INTO items (id, library_id, kind, key, title, sort_title, added_at, updated_at)
+             VALUES (1, 1, 'movie', 'm', 'Film', 'film', 0, 0)",
+        ] {
+            sqlx::query(sql).execute(&state.db.write).await.unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO media_files (id, item_id, library_id, path, size, mtime, container, video_codec,
+             audio_codec, duration_ms, media_info, added_at, updated_at)
+             VALUES (1, 1, 1, '/films/film.mp4', 1, 0, 'mp4', 'h264', 'aac', 7200000, ?, 0, 0)",
+        )
+        .bind(media.to_string())
+        .execute(&state.db.write)
+        .await
+        .unwrap();
+        let user = AuthUser {
+            id: 1,
+            username: "sam".into(),
+            is_admin: true,
+            account_admin: true,
+            all_libraries: true,
+            max_age: None,
+            app: None,
+            compatibility: None,
+        };
+        let tv = Found {
+            id: "a1b2c3d4e5f6".into(),
+            name: "TV".into(),
+            model: None,
+            address: "192.0.2.20:7000".parse().unwrap(),
+            video: true,
+            protocol: Protocol::AirPlay,
+        };
+        // The stream the cast asks for, so that the device shows them.
+        let request: PlaybackRequest = serde_json::from_value(serde_json::json!({
+            "item_id": 1,
+            "subtitle_index": 2,
+            "caps": crate::airplay::device::choose(&tv).caps,
+            "mode": "remux",
+            "client_id": tv.key(),
+            "keep_previous": true,
+            "keyed_urls": true,
+        }))
+        .unwrap();
+        let request = PlaybackRequest { device_id: Some(tv.key()), ..request };
+        // The transcoder fails, refuses the job, or can't take it now: the
+        // file plays as it is, as it did before such casts asked for a
+        // stream.
+        for status in [500, 400, 503] {
+            failing.store(status, Ordering::SeqCst);
+            let started =
+                start_session(state.clone(), user.clone(), request.clone(), tv.key(), CancellationToken::new()).await;
+            let Json(info) = started.unwrap_or_else(|err| panic!("{status}: {err:?}"));
+            assert_eq!(info.method, Method::Direct, "{status}");
+        }
     }
 }

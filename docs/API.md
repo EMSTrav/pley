@@ -4061,10 +4061,11 @@ would.
   burned in, and a text track goes in the playlist (the keyed
   `subtitled-{index}.m3u8`). A cast that shows a text track (the one
   picked, else the one the caster's choices pick) is therefore a stream,
-  copied as it is where it can be. When the server can't make one then
-  (its transcoder isn't running, its limit on streams is reached, or
-  video transcoding is off and the video can't be copied), the file plays
-  as it is, without them, and the session says so. The
+  copied as it is where it can be. When the server doesn't make one,
+  whatever the reason (its transcoder isn't running or fails, its limit
+  on streams is reached, or video transcoding is off and the video can't
+  be copied), the file plays as it is, without them, and the session says
+  so. The
   session has the controls `play`, `pause`, `seek` and `skip`; the
   device keeps its volume to itself. It ends as a Cast device's does.
 
