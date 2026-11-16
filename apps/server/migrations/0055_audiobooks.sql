@@ -8,6 +8,11 @@
 -- foreign keys off for the while, so that dropping the old table doesn't
 -- delete every library's items, and in one transaction. The trigger on the
 -- old table goes with it and is made again.
+--
+-- A migration without sqlx's transaction is recorded only after it ran, so
+-- a crash in between runs it again: it makes the table again and nothing
+-- else, which a second run does as well. The books' columns are added by
+-- the next migration, in sqlx's transaction.
 PRAGMA foreign_keys = OFF;
 BEGIN;
 
@@ -29,16 +34,6 @@ ALTER TABLE libraries_new RENAME TO libraries;
 CREATE TRIGGER library_ids_given AFTER INSERT ON libraries BEGIN
     UPDATE library_ids SET last = MAX(last, NEW.id);
 END;
-
--- Who wrote and who reads a book, and the series it is part of, come from
--- the files' tags or folders and are kept on the book: `authors` and
--- `narrators` are JSON arrays of names, in their order; `series_index` is
--- the book's place in its series (2, or 2.5 for a novella between two
--- books).
-ALTER TABLE items ADD COLUMN authors TEXT;
-ALTER TABLE items ADD COLUMN narrators TEXT;
-ALTER TABLE items ADD COLUMN series TEXT;
-ALTER TABLE items ADD COLUMN series_index REAL;
 
 COMMIT;
 PRAGMA foreign_keys = ON;

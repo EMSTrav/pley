@@ -181,15 +181,17 @@ mod tests {
             "INSERT INTO libraries (id, name, kind, paths, created_at, scanned_at, position, labels_pending)
              VALUES (3, 'Music', 'music', '[\"/m\"]', 10, 20, 1, 0), (5, 'Films', 'movies', '[]', 11, NULL, 0, 1)",
             "INSERT INTO items (id, library_id, kind, key, title, sort_title, added_at, updated_at)
-             VALUES (7, 5, 'movie', 'movie:alien:1979', 'Alien', 'alien', 0, 0)",
+             VALUES (7, 5, 'movie', 'movie:a film:2001', 'A Film', 'film', 0, 0)",
             "INSERT INTO media_files (id, item_id, library_id, path, size, mtime, added_at, updated_at)
-             VALUES (9, 7, 5, '/films/Alien.mkv', 1, 0, 0, 0)",
+             VALUES (9, 7, 5, '/films/A Film.mkv', 1, 0, 0, 0)",
         ] {
             sqlx::query(sqlx::AssertSqlSafe(sql)).execute(&pool).await.unwrap();
         }
         pool.close().await;
 
         let db = Db::open(&path).await.unwrap();
+        // A book's writers, narrators and series have their columns.
+        sqlx::query("SELECT authors, narrators, series, series_index FROM items").fetch_all(&db.read).await.unwrap();
         type Library = (i64, String, String, String, i64, Option<i64>, i64, bool);
         let libraries: Vec<Library> = sqlx::query_as(
             "SELECT id, name, kind, paths, created_at, scanned_at, position, labels_pending FROM libraries ORDER BY id",
@@ -231,6 +233,37 @@ mod tests {
         assert_eq!(left, 0);
         let last: i64 = sqlx::query_scalar("SELECT last FROM library_ids").fetch_one(&db.read).await.unwrap();
         assert_eq!(last, 6);
+        db.close().await;
+    }
+
+    /// The audiobooks migration runs outside sqlx's transaction, which
+    /// records it only after it ran: a server stopped in between runs it
+    /// again as it starts, and starts.
+    #[tokio::test]
+    async fn the_audiobooks_upgrade_runs_again_after_a_crash() {
+        let dir = crate::testing::tempdir();
+        let path = dir.path().join("pley.db");
+        let pool = database_before(56, &path).await;
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 55").execute(&pool).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+        for sql in [
+            "INSERT INTO libraries (id, name, kind, created_at) VALUES (4, 'Books', 'audiobooks', 0)",
+            "INSERT INTO items (id, library_id, kind, key, title, sort_title, added_at, updated_at)
+             VALUES (8, 4, 'audiobook', 'audiobook:a book', 'A Book', 'book', 0, 0)",
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(sql)).execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+
+        let db = Db::open(&path).await.unwrap();
+        let latest: Vec<i64> = MIGRATOR.iter().map(|m| m.version).collect();
+        assert_eq!(versions(&path).await, latest);
+        let held: (i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM libraries), (SELECT COUNT(*) FROM items)")
+            .fetch_one(&db.read)
+            .await
+            .unwrap();
+        assert_eq!(held, (1, 1));
+        sqlx::query("UPDATE items SET authors = '[\"A Writer\"]' WHERE id = 8").execute(&db.write).await.unwrap();
         db.close().await;
     }
 
