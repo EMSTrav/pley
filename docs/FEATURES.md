@@ -30,7 +30,7 @@ the Plex- and Jellyfin-compatible APIs don't get them.
   `Author/Book`, `Author/Series/Book` or `Author/Book.m4b`; a book's
   folder may begin with its place in the series (`Book 2 - Title`,
   `2.5 - Novella`), end with its year (`Title (2007)`), and name its
-  narrator in braces (`Title {Kate Reading}`), as Audiobookshelf's do.
+  narrator in braces (`Title {Narrator B}`), as Audiobookshelf's do.
 - The files' tags win over their folders: `album` is the book,
   `album_artist` or `artist` its authors (`;`, `&` or `/` between
   several), `composer` or `narrator` its narrators, `series` and

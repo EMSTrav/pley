@@ -333,7 +333,7 @@ interface ItemDetail extends ItemSummary {
 interface Book {                    // from the files' tags, else their folders (docs/FEATURES.md, "Audiobooks")
   authors: string[];                // "Unknown Author" when nothing says
   narrators: string[];              // may be empty
-  series: string | null;            // "Mistborn"
+  series: string | null;            // "Series X"
   series_index: number | null;      // the book's place in its series: 2, or 2.5 between two books
 }
 
