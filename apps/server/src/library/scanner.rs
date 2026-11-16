@@ -1070,7 +1070,7 @@ impl Writer<'_> {
         let known = self.containers.contains_key(&book_key);
         let mut book = NewItem::new("audiobook", book_key, name.title.clone());
         book.year = name.year;
-        book.path = Some(path_str(&name.book_dir));
+        book.path = name.book_dir.as_deref().map(path_str);
         book.genres = name.genre.as_ref().map(|g| serde_json::json!([g]).to_string());
         let book_id = self.container(conn, book).await?;
         if !known {

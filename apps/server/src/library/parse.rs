@@ -10,6 +10,9 @@
 //!   (`Show/Season 1/Title.mkv`), which keeps its own place (see
 //!   [`EpisodeName::episode`])
 //! * `Music/Artist/Album (2001)/01 - Track.flac` (tags take precedence)
+//! * `Audiobooks/Author/Series/1 - Book (2001)/01 - Chapter.mp3`,
+//!   `Author/Book/Book.m4b`, `Author/Book.m4b` (tags take precedence; see
+//!   [`parse_audiobook`])
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -492,14 +495,13 @@ pub struct AudiobookName {
     pub year: Option<i32>,
     pub genre: Option<String>,
     pub summary: Option<String>,
-    /// What tells the book apart in its library: its folder, or the file
-    /// itself when the file is the whole book.
+    /// What tells the book apart in its library: its folder, its folder and
+    /// its album, or the file itself (see [`parse_audiobook`]).
     pub book_key: String,
-    /// The folder the book's files (or its `CD 1`… folders) are in.
-    pub book_dir: PathBuf,
-    /// Whether the file is the whole book (an `.m4b`, or a file alone in the
-    /// library's folder), so artwork named after it is the book's.
-    pub single_file: bool,
+    /// The book's own folder, which its files (or its `CD 1`… folders) are
+    /// in: none for a book in the library's folder or in its author's,
+    /// whose pictures aren't the book's.
+    pub book_dir: Option<PathBuf>,
     pub part_title: String,
     pub part: Option<i32>,
     pub disc: Option<i32>,
@@ -554,16 +556,30 @@ fn book_folder(name: &str) -> (String, Option<f64>, Option<i32>, Option<String>)
     (title.replace('_', " ").trim().to_owned(), index, year, narrator)
 }
 
-/// Reads an audiobook's file: the book from its tags (`album`, `artist`,
-/// `composer` for the narrator, `series`…) and else from its folders, laid
-/// out as `Author/Book`, `Author/Series/Book`, with `CD 1`… folders inside a
-/// book, or `Author/Book.m4b`. An `.m4b` file, or a file directly in the
-/// library's folder, is a whole book; other files are parts of their
-/// folder's book.
+/// Reads an audiobook's file: the book it is part of, from its tags
+/// (`album`, `artist`, `composer` for the narrator, `series`…) and else from
+/// its folders, as Audiobookshelf reads them, and the part it is.
+///
+/// The file alone says which book it is part of: a scan reads a book's
+/// files in any order, and the files beside it change between scans.
+/// * A file in the library's folder is a book.
+/// * An `.m4b` with an `album` tag is part of the book of that album in its
+///   folder: a book in several `.m4b` files is one book, and books side by
+///   side in their author's or their series' folder are each their own.
+/// * An `.m4b` without one is a book.
+/// * Any other file is part of its folder's book, as with Audiobookshelf:
+///   loose files side by side are parts of one book.
+///
+/// The book's folder is the file's, or the one above a `CD 1`, `Disc 2`…
+/// folder. Of the folders it is in, the first is its author's
+/// (`Author/Book`) and the second its series' (`Author/Series/Book`); a
+/// book's folder at the top of the library is its own alone. An `.m4b` in a
+/// folder at the top (`Author/Book.m4b`) is in its author's, though, unless
+/// the folder is named as the book or the file is (`Book/Book.m4b`).
 pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>) -> AudiobookName {
     let comps = rel_components(path, root);
     let mut dirs: Vec<String> = comps[..comps.len().saturating_sub(1)].to_vec();
-    let mut book_dir = path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
+    let mut folder = path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf());
 
     // `Book/CD 1/01.mp3`: the book is the folder above the disc's.
     let mut folder_disc = None;
@@ -572,29 +588,46 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
     {
         folder_disc = c[1].parse().ok();
         dirs.pop();
-        book_dir = book_dir.parent().map(Path::to_path_buf).unwrap_or(book_dir);
+        folder = folder.parent().map(Path::to_path_buf).unwrap_or(folder);
     }
 
     let stem = file_stem(path);
     let m4b = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("m4b"));
-    let single_file = (m4b && folder_disc.is_none()) || dirs.is_empty();
-    // The folders above the book: its author's, then its series'.
-    let (book_folder_name, above) =
-        if single_file { (None, dirs.as_slice()) } else { (dirs.last().cloned(), &dirs[..dirs.len() - 1]) };
-    let folder_author = above.first().cloned();
-    let folder_series = above.get(1).cloned();
+    let album = tag(tags, &["album"]).map(str::to_owned);
+    let from_stem = book_folder(&stem);
 
-    let (folder_title, folder_index, folder_year, folder_narrator) = match &book_folder_name {
-        Some(name) => book_folder(name),
-        None => book_folder(&stem),
+    // `Author/Book.m4b`: the folder is the author's, unless it has the
+    // book's name, by its album or its file.
+    let in_authors_folder = m4b && dirs.len() == 1 && {
+        let name = normalize_key(&book_folder(&dirs[0]).0);
+        album.as_deref().is_none_or(|a| normalize_key(a) != name) && normalize_key(&from_stem.0) != name
+    };
+    let book_dir = (!dirs.is_empty() && !in_authors_folder).then(|| folder.clone());
+    // The folders above the book's: its author's, then its series'.
+    let above = if book_dir.is_some() { &dirs[..dirs.len() - 1] } else { &dirs[..] };
+    let folder_author = above.first();
+    let folder_series = above.get(1);
+
+    let by_file = dirs.is_empty() || (m4b && album.is_none());
+    let book_key = match &album {
+        _ if by_file => path_key(path),
+        // A line break, which no folder's name has, keeps the folder and
+        // the album apart.
+        Some(album) if m4b => format!("{}\n{}", path_key(&folder), album_key(album)),
+        _ => path_key(&folder),
     };
 
-    let tag_title = tag(tags, &["album"]).map(str::to_owned);
-    let title = tag_title.clone().or(Some(folder_title)).filter(|t| !t.is_empty()).unwrap_or_else(|| stem.clone());
+    // The name that tells the book: its folder's, unless the file is the
+    // book on its own (its folder may hold others) or it has none.
+    let (named, folder_index, folder_year, folder_narrator) = match dirs.last() {
+        Some(dir) if !by_file && book_dir.is_some() => book_folder(dir),
+        _ => from_stem,
+    };
+    let title = album.clone().or(Some(named)).filter(|t| !t.is_empty()).unwrap_or_else(|| stem.clone());
     let authors = tag(tags, &["album_artist", "albumartist", "album artist", "author", "artist"])
         .map(names)
         .filter(|a| !a.is_empty())
-        .or_else(|| folder_author.map(|a| names(&a)))
+        .or_else(|| folder_author.map(|a| names(a)))
         .filter(|a| !a.is_empty())
         .unwrap_or_else(|| vec!["Unknown Author".into()]);
     let narrators = tag(tags, &["narrator", "narrated_by", "composer"])
@@ -615,21 +648,16 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         .filter(|y| (1000..=9999).contains(y))
         .or(folder_year);
 
-    // A single-file book's part is the book; a folder's parts are named by
-    // their tags or files.
+    // Parts are named by their titles, unless that is the book's, else by
+    // their files: an `.m4b` too, which may be one of a book's.
     let (file_disc, file_part, file_title) = match TRACK_PREFIX.captures(&stem) {
         Some(c) => (c.get(1).and_then(|d| d.as_str().parse().ok()), c[2].parse().ok(), clean_title(&c[3])),
         None => (None, None, clean_title(&stem)),
     };
-    let part_title = if single_file {
-        title.clone()
-    } else {
-        tag(tags, &["title"])
-            .filter(|t| tag_title.as_deref() != Some(*t))
-            .map(str::to_owned)
-            .unwrap_or(if file_title.is_empty() { stem.clone() } else { file_title })
-    };
-    let book_key = if single_file { path_key(path) } else { path_key(&book_dir) };
+    let part_title = tag(tags, &["title"])
+        .filter(|t| album.as_deref() != Some(*t))
+        .map(str::to_owned)
+        .unwrap_or(if file_title.is_empty() { stem.clone() } else { file_title });
 
     AudiobookName {
         title,
@@ -642,11 +670,15 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         summary: tag(tags, &["description", "synopsis", "comment"]).map(str::to_owned),
         book_key,
         book_dir,
-        single_file,
         part_title,
         part: tag(tags, &["track", "tracknumber"]).and_then(leading_int).or(file_part),
         disc: folder_disc.or_else(|| tag(tags, &["disc", "discnumber", "disk"]).and_then(leading_int)).or(file_disc),
     }
+}
+
+/// An album as books are told apart by it: trimmed, in any case.
+fn album_key(album: &str) -> String {
+    album.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
 fn path_key(path: &Path) -> String {
@@ -883,8 +915,7 @@ mod tests {
         assert_eq!((b.series.as_deref(), b.series_index), (Some("Series X"), Some(2.0)));
         assert_eq!(b.year, Some(2007));
         assert_eq!((b.part, b.part_title.as_str()), (Some(3), "Chapter Three"));
-        assert!(!b.single_file);
-        assert_eq!(b.book_dir, root.join("Author A/Series X/Book 2 - The Second Book (2007)"));
+        assert_eq!(b.book_dir, Some(root.join("Author A/Series X/Book 2 - The Second Book (2007)")));
         assert_eq!(b.book_key, path_key(&root.join("Author A/Series X/Book 2 - The Second Book (2007)")));
 
         // A novella between two books, and a narrator in braces.
@@ -896,7 +927,8 @@ mod tests {
         // Discs inside a book are its parts, numbered by disc.
         let b = parse_audiobook(&root.join("Author A/Book One/CD 2/04 Track.mp3"), root, &none);
         assert_eq!((b.title.as_str(), b.disc, b.part), ("Book One", Some(2), Some(4)));
-        assert_eq!(b.book_dir, root.join("Author A/Book One"));
+        assert_eq!(b.book_dir, Some(root.join("Author A/Book One")));
+        assert_eq!(b.book_key, path_key(&root.join("Author A/Book One")));
         assert_eq!(b.series, None);
 
         // A number that is the title's own, not a place in a series.
@@ -907,16 +939,108 @@ mod tests {
 
         // An `.m4b` is a whole book, also beside other books by its author.
         let b = parse_audiobook(&root.join("Author B/Book Three.m4b"), root, &none);
-        assert!(b.single_file);
         assert_eq!((b.title.as_str(), b.part_title.as_str()), ("Book Three", "Book Three"));
         assert_eq!(b.authors, ["Author B"]);
         assert_eq!(b.book_key, path_key(&root.join("Author B/Book Three.m4b")));
-        assert_eq!(b.book_dir, root.join("Author B"));
+        assert_eq!(b.book_dir, None, "the author's folder isn't the book's");
 
         // A file alone in the library's folder, by no one known.
         let b = parse_audiobook(&root.join("Loose Book.mp3"), root, &none);
-        assert!(b.single_file);
+        assert_eq!(b.book_key, path_key(&root.join("Loose Book.mp3")));
+        assert_eq!(b.book_dir, None);
         assert_eq!((b.title.as_str(), b.authors.as_slice()), ("Loose Book", ["Unknown Author".to_owned()].as_slice()));
+    }
+
+    fn tags(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
+    }
+
+    /// Which book a file is part of, and the folders that name it, as
+    /// Audiobookshelf has them, from the file alone.
+    #[test]
+    fn audiobooks_are_grouped_by_their_files_alone() {
+        let root = Path::new("/books");
+        let book = |rel: &str, pairs: &[(&str, &str)]| parse_audiobook(&root.join(rel), root, &tags(pairs));
+        let key = |rel: &str| path_key(&root.join(rel));
+        let album_key = |rel: &str, album: &str| format!("{}\n{album}", key(rel));
+
+        // `Author/Book/Book.m4b`: the folder is the book's, its author above
+        // it, and no series.
+        let b = book("Author A/Book One/Book One.m4b", &[("album", "Book One")]);
+        assert_eq!(b.book_key, album_key("Author A/Book One", "book one"));
+        assert_eq!(b.book_dir, Some(root.join("Author A/Book One")));
+        assert_eq!(
+            (b.title.as_str(), b.authors.as_slice(), b.series),
+            ("Book One", ["Author A".to_owned()].as_slice(), None)
+        );
+        // Without an album, the file is the book, named by its file.
+        let b = book("Author A/Book One/Rip Name.m4b", &[]);
+        assert_eq!((b.book_key, b.title.as_str()), (key("Author A/Book One/Rip Name.m4b"), "Rip Name"));
+        assert_eq!(b.book_dir, Some(root.join("Author A/Book One")));
+        assert_eq!(b.authors, ["Author A"]);
+        // `Author/Series/Book/Book.m4b`.
+        let b = book("Author A/Series X/Book Two/Book Two.m4b", &[]);
+        assert_eq!((b.title.as_str(), b.series.as_deref()), ("Book Two", Some("Series X")));
+        assert_eq!(b.authors, ["Author A"]);
+
+        // A book in two `.m4b` files is one book, its parts named by their
+        // titles or files.
+        let one = book("Author B/Split Book/Split Book 1.m4b", &[("album", "Split Book"), ("title", "Split Book")]);
+        let two = book("Author B/Split Book/Split Book 2.m4b", &[("album", " split  BOOK "), ("title", "The End")]);
+        assert_eq!(one.book_key, two.book_key);
+        assert_eq!(one.book_key, album_key("Author B/Split Book", "split book"));
+        assert_eq!((one.part_title.as_str(), two.part_title.as_str()), ("Split Book 1", "The End"));
+        let one = book("Author B/Split Book/01 - Split Book.m4b", &[("album", "Split Book")]);
+        assert_eq!((one.part, one.part_title.as_str()), (Some(1), "Split Book"));
+
+        // Books side by side in their author's folder, or their series',
+        // are each their own.
+        let four = book("Author C/Book Four.m4b", &[("album", "Book Four")]);
+        let five = book("Author C/Book Five.m4b", &[("album", "Book Five")]);
+        assert_ne!(four.book_key, five.book_key);
+        assert_eq!((four.book_dir, four.authors.as_slice()), (None, ["Author C".to_owned()].as_slice()));
+        let four = book("Author C/Series Y/Book Four.m4b", &[("album", "Book Four")]);
+        let five = book("Author C/Series Y/Book Five.m4b", &[("album", "Book Five")]);
+        assert_ne!(four.book_key, five.book_key);
+        assert_eq!((four.title.as_str(), five.title.as_str()), ("Book Four", "Book Five"));
+        assert_eq!(four.authors, ["Author C"]);
+        assert_eq!(four.series, None, "a series is never read from two folders");
+        let four = book("Author C/Series Y/Book Four.m4b", &[]);
+        assert_eq!((four.book_key, four.title.as_str()), (key("Author C/Series Y/Book Four.m4b"), "Book Four"));
+
+        // A folder at the top named as its `.m4b` (or its album) is the
+        // book's, not an author's.
+        let b = book("Book Seven/Book Seven.m4b", &[]);
+        assert_eq!(
+            (b.book_dir, b.authors.as_slice()),
+            (Some(root.join("Book Seven")), ["Unknown Author".to_owned()].as_slice())
+        );
+        let b = book("Book Seven (2001)/Rip Name.m4b", &[("album", "Book Seven")]);
+        assert_eq!((b.book_dir, b.title.as_str()), (Some(root.join("Book Seven (2001)")), "Book Seven"));
+        assert_eq!((b.year, b.authors.as_slice()), (Some(2001), ["Unknown Author".to_owned()].as_slice()));
+
+        // Files at the top of a book's folder at the top: one book, by no
+        // one known.
+        let one = book("Book Six/01.mp3", &[]);
+        let two = book("Book Six/02.mp3", &[]);
+        assert_eq!((one.book_key.as_str(), one.title.as_str()), (key("Book Six").as_str(), "Book Six"));
+        assert_eq!(one.book_key, two.book_key);
+        assert_eq!(one.authors, ["Unknown Author"]);
+        // Files in the library's folder are books of their own.
+        assert_ne!(book("Loose One.mp3", &[]).book_key, book("Loose Two.mp3", &[]).book_key);
+        // Other files side by side are parts of their folder's book, as
+        // with Audiobookshelf.
+        let a = book("Author F/Book A.mp3", &[]);
+        let b = book("Author F/Book B.mp3", &[]);
+        assert_eq!((a.book_key.as_str(), a.title.as_str()), (b.book_key.as_str(), "Author F"));
+
+        // Discs inside a book's folder are the book's.
+        let one = book("Author D/Book Eight/CD 1/01 - Start.mp3", &[]);
+        let two = book("Author D/Book Eight/Disc 2/01 - End.mp3", &[]);
+        assert_eq!(one.book_key, key("Author D/Book Eight"));
+        assert_eq!(one.book_key, two.book_key);
+        assert_eq!((one.disc, two.disc, one.part), (Some(1), Some(2), Some(1)));
+        assert_eq!((one.authors.as_slice(), one.series), (["Author D".to_owned()].as_slice(), None));
     }
 
     #[test]

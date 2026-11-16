@@ -25,12 +25,22 @@ What Pley does, in full. The [README](../README.md) has the short version.
 Audiobook libraries are in the web and desktop apps. The other apps and
 the Plex- and Jellyfin-compatible APIs don't get them.
 
-- A book is an `.m4b` file, or a folder of audio files (with `CD 1`,
-  `Disc 2`… folders inside it if it has them). Folders are read as
-  `Author/Book`, `Author/Series/Book` or `Author/Book.m4b`; a book's
-  folder may begin with its place in the series (`Book 2 - Title`,
-  `2.5 - Novella`), end with its year (`Title (2007)`), and name its
-  narrator in braces (`Title {Narrator B}`), as Audiobookshelf's do.
+- Books are found as Audiobookshelf finds them. A book is a folder of
+  audio files (with `CD 1`, `Disc 2`… folders inside it if it has them),
+  an `.m4b` file, or `.m4b` files of the same `album` tag in one folder.
+  Files directly in the library's folder are books of their own; other
+  files side by side in a folder are parts of one book, `.m4b` files
+  excepted.
+- Folders are read as `Author/Book`, `Author/Series/Book`,
+  `Author/Book/Book.m4b` or `Author/Book.m4b`: of the folders above a
+  book's own, the first is its author's and the second its series'. A
+  folder at the top of the library is a book's own (`Book/01.mp3`), but
+  one with an `.m4b` in it is its author's (`Author/Book.m4b`), unless
+  it is named as the book or the file is. A book's folder may begin with
+  its place in the series (`Book 2 - Title`, `2.5 - Novella`), end with
+  its year (`Title (2007)`), and name its narrator in braces
+  (`Title {Narrator B}`), as Audiobookshelf's do. An `.m4b` without an
+  `album` tag is named by its file.
 - The files' tags win over their folders: `album` is the book,
   `album_artist` or `artist` its authors (`;`, `&` or `/` between
   several), `composer` or `narrator` its narrators, `series` and

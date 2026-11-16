@@ -3,10 +3,87 @@
 
 mod common;
 
+use std::collections::BTreeMap;
+use std::time::Duration;
+
 use axum::http::{Method, StatusCode};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use pley_transcoder_api::{
+    API_VERSION, Capabilities, MediaInfo, MediaStream, ProbeRequest, StreamKind, TranscoderInfo,
+};
 use serde_json::{Value, json};
 
 use common::{TestApp, titles};
+
+/// A transcoder stand-in whose probe reads a file's tags from the file
+/// itself, where [`tagged`] writes them: other files have none.
+async fn start_transcoder() -> String {
+    let app = Router::new()
+        .route(
+            "/v1/info",
+            get(|| async {
+                Json(TranscoderInfo {
+                    api_version: API_VERSION,
+                    capabilities: Capabilities { ffmpeg_available: true, ..Default::default() },
+                    ..Default::default()
+                })
+            }),
+        )
+        .route(
+            "/v1/probe",
+            post(|Json(req): Json<ProbeRequest>| async move {
+                let tags = std::fs::read(&req.path).ok().and_then(|b| serde_json::from_slice(&b).ok());
+                Json(MediaInfo {
+                    container: Some("mp4".into()),
+                    duration_ms: Some(60_000),
+                    streams: vec![MediaStream {
+                        index: 0,
+                        kind: StreamKind::Audio,
+                        codec: "aac".into(),
+                        default: true,
+                        ..Default::default()
+                    }],
+                    tags: tags.unwrap_or_default(),
+                    ..Default::default()
+                })
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+/// A Pley whose files' tags are read by [`start_transcoder`], and its
+/// administrator's token.
+async fn tagged_app() -> (TestApp, String) {
+    let base = start_transcoder().await;
+    let app = TestApp::with_config(|c| c.transcoder_url = Some(base)).await;
+    app.state.transcoder.start();
+    assert!(app.state.transcoder.wait_ready(Duration::from_secs(10)).await);
+    let token = app.setup_admin().await;
+    (app, token)
+}
+
+/// An audio file whose tags are `tags`.
+fn tagged(app: &TestApp, rel: &str, tags: Value) {
+    let path = app.media.path().join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, tags.to_string()).unwrap();
+}
+
+/// A library's books by title: their writers, their series, and their
+/// parts in order.
+async fn shelf(app: &TestApp, token: &str, lib: i64) -> BTreeMap<String, (Value, Value, Vec<String>)> {
+    let mut books = BTreeMap::new();
+    for (title, id) in app.ids(lib, token).await {
+        let book = app.get(&format!("/api/items/{id}"), token).await.body["book"].clone();
+        let parts = app.get(&format!("/api/items/{id}/children"), token).await;
+        books.insert(title, (book["authors"].clone(), book["series"].clone(), titles(&parts.body["items"])));
+    }
+    books
+}
 
 /// A library of two books: one in a folder of two parts, in its author's
 /// series, and one `.m4b` file.
@@ -109,10 +186,7 @@ async fn play_takes_up_a_book_where_it_was_left() {
     let deck = on_deck(&app, &token, road).await;
     assert_eq!((deck["id"].as_i64(), deck["user_state"]["position_ms"].as_i64()), (Some(prologue), Some(600_000)));
     assert_eq!(hub(&app, &token, "/api/hubs/home", "continue_listening").await, ["The Long Road"]);
-    assert_eq!(
-        hub(&app, &token, &format!("/api/libraries/{lib}/hubs"), "continue_listening").await,
-        ["The Long Road"]
-    );
+    assert_eq!(hub(&app, &token, &format!("/api/libraries/{lib}/hubs"), "continue_listening").await, ["The Long Road"]);
     // Audiobooks aren't videos to continue watching.
     assert!(hub(&app, &token, "/api/hubs/home", "continue_watching").await.is_empty());
 
@@ -178,4 +252,48 @@ async fn compatibility_apis_leave_audiobooks_out() {
     let views = app.jf_json("/UserViews", &jf).await;
     let names: Vec<&str> = views["Items"].as_array().unwrap().iter().map(|v| v["Name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Movies"]);
+}
+
+/// Books are found as Audiobookshelf finds them, each file by its own
+/// folders and tags: a book in several `.m4b` files is one, books side by
+/// side in their author's folder are each their own.
+#[tokio::test]
+async fn books_are_found_in_the_usual_layouts() {
+    let (app, token) = tagged_app().await;
+    tagged(&app, "books/Author A/Book One/Book One.m4b", json!({"album": "Book One"}));
+    app.media_file("books/Author A/Series X/Book Two/Book Two.m4b", 512);
+    tagged(&app, "books/Author B/Split Book/Split Book 1.m4b", json!({"album": "Split Book", "track": "1"}));
+    tagged(&app, "books/Author B/Split Book/Split Book 2.m4b", json!({"album": "Split Book", "track": "2"}));
+    tagged(&app, "books/Author C/Book Four.m4b", json!({"album": "Book Four"}));
+    tagged(&app, "books/Author C/Book Five.m4b", json!({"album": "Book Five"}));
+    for n in 1..=3 {
+        app.media_file(&format!("books/Book Six/0{n}.mp3"), 512);
+    }
+    app.media_file("books/Book Seven/Book Seven.m4b", 512);
+    app.media_file("books/Loose One.mp3", 512);
+    app.media_file("books/Loose Two.m4b", 512);
+    app.media_file("books/Author D/Book Eight/CD 1/01 - Start.mp3", 512);
+    app.media_file("books/Author D/Book Eight/CD 2/01 - End.mp3", 512);
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+
+    let book = |authors: &str, series: Value, parts: &[&str]| {
+        (json!([authors]), series, parts.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>())
+    };
+    let unknown = "Unknown Author";
+    let expected: BTreeMap<String, _> = [
+        ("Book One", book("Author A", Value::Null, &["Book One"])),
+        ("Book Two", book("Author A", json!("Series X"), &["Book Two"])),
+        ("Split Book", book("Author B", Value::Null, &["Split Book 1", "Split Book 2"])),
+        ("Book Four", book("Author C", Value::Null, &["Book Four"])),
+        ("Book Five", book("Author C", Value::Null, &["Book Five"])),
+        ("Book Six", book(unknown, Value::Null, &["01", "02", "03"])),
+        ("Book Seven", book(unknown, Value::Null, &["Book Seven"])),
+        ("Loose One", book(unknown, Value::Null, &["Loose One"])),
+        ("Loose Two", book(unknown, Value::Null, &["Loose Two"])),
+        ("Book Eight", book("Author D", Value::Null, &["Start", "End"])),
+    ]
+    .into_iter()
+    .map(|(title, book)| (title.to_owned(), book))
+    .collect();
+    assert_eq!(shelf(&app, &token, lib).await, expected);
 }
