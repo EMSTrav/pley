@@ -1,10 +1,11 @@
-//! Who gets audiobooks: the web and desktop apps do, other apps (their
-//! tokens) don't, neither the libraries nor their books on Home, in search
-//! or in history, and still order the libraries they get.
+//! Who gets audiobooks, and what is made of them: the web and desktop apps
+//! do, other apps (their tokens) don't, neither the libraries nor their
+//! books on Home, in search or in history, and still order the libraries
+//! they get. Collections and smart playlists aren't made of books.
 
 mod common;
 
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use common::{TestApp, encode, titles};
@@ -158,4 +159,67 @@ async fn apps_order_the_libraries_they_get() {
     let all = w.app.put("/api/me/libraries/order", &token, json!({"ids": [w.books, w.docs, w.films]})).await;
     assert_eq!(all.status, StatusCode::CONFLICT, "{:?}", all.body);
     assert_eq!(libraries(&w.app, "/api/libraries", &w.admin).await, ["Books", "Docs", "Films"]);
+}
+
+/// A collection holds movies and shows and a playlist no book, so neither
+/// is made of a library of books: `400` on Pley's API, and the
+/// compatibility APIs, which list no such library, don't find it.
+#[tokio::test]
+async fn collections_and_smart_playlists_refuse_audiobook_libraries() {
+    let w = shelf().await;
+    let made =
+        w.app.post(&format!("/api/libraries/{}/collections", w.books), &w.admin, json!({"title": "Picks"})).await;
+    assert_eq!(made.status, StatusCode::BAD_REQUEST, "{:?}", made.body);
+    assert_eq!(made.body["message"], "collections are for movie and TV libraries");
+    let smart = w
+        .app
+        .post(
+            &format!("/api/libraries/{}/collections", w.books),
+            &w.admin,
+            json!({"title": "Picks", "smart_filter": "unwatched=1"}),
+        )
+        .await;
+    assert_eq!(smart.status, StatusCode::BAD_REQUEST, "{:?}", smart.body);
+
+    let playlist = w
+        .app
+        .post(
+            "/api/playlists",
+            &w.admin,
+            json!({"title": "Evening", "smart_filter": "unwatched=1", "library_id": w.books}),
+        )
+        .await;
+    assert_eq!(playlist.status, StatusCode::BAD_REQUEST, "{:?}", playlist.body);
+    assert_eq!(playlist.body["message"], "smart playlists are for movie, TV and music libraries");
+    let films = w
+        .app
+        .post(
+            "/api/playlists",
+            &w.admin,
+            json!({"title": "Evening", "smart_filter": "unwatched=1", "library_id": w.films}),
+        )
+        .await;
+    assert_eq!(films.status, StatusCode::CREATED, "{:?}", films.body);
+
+    let uri =
+        encode(&format!("server://pley/com.plexapp.plugins.library/library/sections/{}/all?unwatched=1", w.books));
+    let plex = w
+        .app
+        .plex(Method::POST, &format!("/playlists?type=audio&title=Evening&smart=1&uri={uri}"), &w.admin, &[])
+        .await;
+    assert_eq!(plex.status, StatusCode::NOT_FOUND, "{}", plex.text());
+    let plex = w
+        .app
+        .plex(
+            Method::POST,
+            &format!("/library/collections?type=1&title=Picks&smart=1&sectionId={}&uri={uri}", w.books),
+            &w.admin,
+            &[],
+        )
+        .await;
+    assert_eq!(plex.status, StatusCode::NOT_FOUND, "{}", plex.text());
+    let manager = common::compatibility_token(&w.app.api, &w.admin, "play manage").await;
+    let library = w.app.jf_library(w.books);
+    let jf = w.app.jf(Method::POST, &format!("/Collections?name=Picks&parentId={library}"), &manager, None).await;
+    assert_eq!(jf.status, StatusCode::BAD_REQUEST, "{}", jf.text());
 }

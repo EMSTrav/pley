@@ -2092,7 +2092,7 @@ interface Collection {
 | Method | Path | Who | What |
 |---|---|---|---|
 | GET | `/api/libraries/{id}/collections` | `library` | `{ collections: Collection[] }` by title |
-| POST | `/api/libraries/{id}/collections` | `admin` | `{ title, summary?, item_ids?: Id[], smart_filter? }` → `201` `Collection & { items: ItemSummary[] }`; `400` for music libraries |
+| POST | `/api/libraries/{id}/collections` | `admin` | `{ title, summary?, item_ids?: Id[], smart_filter? }` → `201` `Collection & { items: ItemSummary[] }`; `400` for music and audiobook libraries |
 | GET | `/api/collections/{id}` | `library` | `Collection & { items: ItemSummary[] }` in the collection's order |
 | PATCH | `/api/collections/{id}` | `admin` | `{ title?, summary? (null clears), sort?, smart_filter? }` → `Collection & { items }` |
 | DELETE | `/api/collections/{id}` | `admin` | `204` (an automatic one comes back when its movies are refreshed) |
@@ -2159,7 +2159,8 @@ interface PlaylistEntry {
 (`smart_filter`, the syntax of smart collections), shows and albums as their
 episodes and tracks, in the filter's order, at most 5,000 entries, as the
 owner may see them. Their entries are keyed by item and can't be added,
-removed or reordered (`400`).
+removed or reordered (`400`). No playlist holds an audiobook's parts, so
+one of an audiobook library is refused (`400`).
 
 ## Playback
 
