@@ -24,7 +24,7 @@ use crate::catalog::ItemRow;
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
 use crate::network::{Kind, Listener};
-use crate::playback::{Control, Method, PlaybackRequest, Pool, Session};
+use crate::playback::{Control, Method, PlaybackMode, PlaybackRequest, Pool, Session};
 use crate::state::AppState;
 
 /// How often the device is asked where it is, and its place kept.
@@ -497,16 +497,29 @@ async fn start_session(
             Json(request),
         )
     };
-    match start(request.clone()).await {
+    let started = match start(request.clone()).await {
         // The server's limit on streams may be full with the cast playing
         // there: it ends first, then, leaving the device to this one.
         Err(AppError::Unavailable(message)) if !abandoned.is_cancelled() => {
             if end_cast_in_the_way(&state, &key) {
                 request.keep_previous = false;
-                start(request).await
+                start(request.clone()).await
             } else {
                 Err(AppError::Unavailable(message))
             }
+        }
+        started => started,
+    };
+    match started {
+        // A stream asked for only so that the device shows the subtitles
+        // (AirPlay's), which the server can't make now: the file plays as
+        // it is, without them, rather than nothing.
+        Err(AppError::Unavailable(_) | AppError::ConflictAs("video_not_converted", _))
+            if request.mode == PlaybackMode::Remux && !abandoned.is_cancelled() =>
+        {
+            tracing::info!("a cast's subtitles need a stream the server can't make now: it plays without them");
+            request.mode = PlaybackMode::Auto;
+            start(request).await
         }
         started => started,
     }
