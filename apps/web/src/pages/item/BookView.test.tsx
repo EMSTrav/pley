@@ -9,7 +9,7 @@ import { BookView, joinNames } from "./BookView";
 
 function book(overrides: Partial<ItemDetail> = {}): ItemDetail {
   return {
-    ...makeItem({ id: 30, kind: "audiobook", title: "The Final Empire", year: 2006, duration_ms: 3_600_000 }),
+    ...makeItem({ id: 30, kind: "audiobook", title: "Book One", year: 2006, duration_ms: 3_600_000 }),
     original_title: null,
     tagline: null,
     genres: [],
@@ -18,7 +18,7 @@ function book(overrides: Partial<ItemDetail> = {}): ItemDetail {
     tmdb_id: null,
     imdb_id: null,
     files: [],
-    book: { authors: ["Brandon Sanderson"], narrators: ["Michael Kramer"], series: "Mistborn", series_index: 1 },
+    book: { authors: ["Author A"], narrators: ["Narrator B"], series: "Series X", series_index: 1 },
     ...overrides,
   };
 }
@@ -64,10 +64,10 @@ describe("a book's page", () => {
   it("says who wrote and reads it, its series and its parts", async () => {
     serve([part(31, 1), part(32, 2)], part(31, 1));
     show(book());
-    expect(screen.getByRole("heading", { name: "The Final Empire" })).toBeInTheDocument();
-    expect(screen.getByText("by Brandon Sanderson")).toBeInTheDocument();
-    expect(screen.getByText("Read by Michael Kramer")).toBeInTheDocument();
-    expect(screen.getByText("Mistborn, book 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Book One" })).toBeInTheDocument();
+    expect(screen.getByText("by Author A")).toBeInTheDocument();
+    expect(screen.getByText("Read by Narrator B")).toBeInTheDocument();
+    expect(screen.getByText("Series X, book 1")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Play Chapter 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play Chapter 2" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
@@ -100,7 +100,7 @@ describe("a book's page", () => {
 
   it("names a book without a series as an audiobook", async () => {
     serve([part(31, 1)], part(31, 1));
-    show(book({ book: { authors: ["Andy Weir"], narrators: [], series: null, series_index: null } }));
+    show(book({ book: { authors: ["Author C"], narrators: [], series: null, series_index: null } }));
     expect(await screen.findByText("Audiobook")).toBeInTheDocument();
     expect(screen.queryByText(/Read by/)).not.toBeInTheDocument();
   });
