@@ -135,6 +135,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const queueRef = useLatest(queue);
   const indexRef = useLatest(index);
+  const sleepRef = useLatest(sleep);
 
   const current = queue[index] ?? null;
   const book = current?.kind === "part";
@@ -402,6 +403,15 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         void release(s, false, dur).then(() => invalidateWatchState(qc));
       }
       const i = indexRef.current;
+      // A sleep timer due by now, or waiting for a point in the part that
+      // just ended, stops here: its check runs a few times a second, less
+      // in a hidden tab, and may not have come round before the end.
+      const timer = sleepRef.current;
+      if (timer && ("until" in timer ? Date.now() >= timer.until : timer.itemId === queueRef.current[i]?.id)) {
+        setSleepState(null);
+        setPlaying(false);
+        return;
+      }
       if (i + 1 < queueRef.current.length) goTo(i + 1);
       else setPlaying(false);
     };
@@ -450,7 +460,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
     };
-  }, [qc, goTo, restartAt, recreateUnlessStopped, indexRef, queueRef]);
+  }, [qc, goTo, restartAt, recreateUnlessStopped, indexRef, queueRef, sleepRef]);
 
   // Periodic progress while playing, and now and then while paused. One
   // answered 410 was stopped on the server, heard without the event stream

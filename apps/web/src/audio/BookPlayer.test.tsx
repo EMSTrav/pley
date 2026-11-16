@@ -70,8 +70,14 @@ function Controls() {
       <button type="button" onClick={() => player.skipBy(-15)}>
         Back
       </button>
+      <button type="button" onClick={() => player.playQueue(parts, 0)}>
+        Start
+      </button>
       <button type="button" onClick={() => player.setSleep({ until: Date.now() + 60_000 })}>
         Sleep
+      </button>
+      <button type="button" onClick={() => player.setSleep({ itemId: 31, atMs: 1_800_000 })}>
+        Sleep at end
       </button>
       <span data-testid="book">{String(player.book)}</span>
       <span data-testid="sleep">{player.sleep ? "on" : "off"}</span>
@@ -151,6 +157,26 @@ describe("AudioPlayer with an audiobook", () => {
     });
     expect(pause).toHaveBeenCalled();
     expect(screen.getByTestId("sleep")).toHaveTextContent("off");
+  });
+
+  it("stops at the end of the part a sleep timer waits for, even when its check came too late", async () => {
+    const requests = serve();
+    const { container } = renderWithProviders(
+      <AudioPlayerProvider>
+        <Controls />
+      </AudioPlayerProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    const audio = container.querySelector("audio")!;
+    await waitFor(() => expect(audio.getAttribute("src")).toBe("/api/playback/s1/file"));
+    await userEvent.click(screen.getByRole("button", { name: "Sleep at end" }));
+    expect(screen.getByTestId("sleep")).toHaveTextContent("on");
+    act(() => {
+      audio.dispatchEvent(new Event("ended"));
+    });
+    expect(screen.getByTestId("sleep")).toHaveTextContent("off");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(starts(requests).map((r) => (r.body as { item_id: number }).item_id)).toEqual([31]);
   });
 
   it("runs the bar through the chapter playing, named under the book", async () => {
