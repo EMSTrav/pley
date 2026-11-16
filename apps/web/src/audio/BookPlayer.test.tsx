@@ -5,6 +5,7 @@ import type { ItemSummary, PlaybackInfo } from "@/api/types";
 import { makeItem } from "@/test/fixtures";
 import { mockApi, renderWithProviders, type FakeRequest } from "@/test/render";
 import { AudioPlayerProvider, useAudioPlayer } from "./AudioPlayer";
+import { AudioPlayerBar } from "./AudioPlayerBar";
 
 const parts: ItemSummary[] = [
   makeItem({ id: 31, kind: "part", parent_id: 30, title: "Chapter One", duration_ms: 1_800_000 }),
@@ -37,6 +38,18 @@ function serve(): FakeRequest[] {
     "POST /api/items/21/progress": () => undefined,
     "DELETE /api/playback/s1": () => undefined,
     "DELETE /api/playback/s2": () => undefined,
+    "GET /api/items/32": () => ({
+      ...parts[1],
+      files: [
+        {
+          id: 1,
+          chapters: [
+            { start_ms: 0, end_ms: 600_000, title: "Opening Credits" },
+            { start_ms: 600_000, end_ms: 1_800_000, title: "Chapter 1" },
+          ],
+        },
+      ],
+    }),
   });
 }
 
@@ -138,5 +151,29 @@ describe("AudioPlayer with an audiobook", () => {
     });
     expect(pause).toHaveBeenCalled();
     expect(screen.getByTestId("sleep")).toHaveTextContent("off");
+  });
+
+  it("runs the bar through the chapter playing, named under the book", async () => {
+    const requests = serve();
+    const { container } = renderWithProviders(
+      <AudioPlayerProvider>
+        <Controls />
+        <AudioPlayerBar />
+      </AudioPlayerProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Resume" }));
+    const audio = container.querySelector("audio")!;
+    await waitFor(() => expect(audio.getAttribute("src")).toBe("/api/playback/s1/file"));
+    expect(requests.some((r) => r.path === "/api/items/32")).toBe(true);
+    Object.defineProperty(audio, "readyState", { configurable: true, get: () => 4 });
+    Object.defineProperty(audio, "duration", { configurable: true, get: () => 1800 });
+    audio.currentTime = 900;
+    act(() => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    // Five minutes into a chapter of twenty.
+    expect(await screen.findByText("Chapter 1")).toBeInTheDocument();
+    expect(screen.getByText("5:00")).toBeInTheDocument();
+    expect(screen.getByText("20:00")).toBeInTheDocument();
   });
 });

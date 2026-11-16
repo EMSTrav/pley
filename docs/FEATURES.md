@@ -43,9 +43,10 @@ show them yet.
   is finished only in its last 30 seconds, not at 90 % as a film is.
   Books part way through are in Continue Listening, on Home and in their
   library.
-- A book's page has its writers, narrators and series, how much is left,
-  and its parts, or the chapters of a book in one file, each played from
-  where it starts. The player goes back 15 seconds and on 30, plays from
+- A book's page has its writers, narrators and series, how much of it is
+  listened to and how much is left, and its parts, or the chapters of a
+  book in one file, each played from where it starts. The player's bar
+  runs through the chapter playing, named under the book. The player goes back 15 seconds and on 30, plays from
   0.75× to 3× (kept for every book), and has a sleep timer: 15 to 60
   minutes, or the end of the chapter or part.
 - Not yet: the other apps, metadata from an online source, authors' and

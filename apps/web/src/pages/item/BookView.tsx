@@ -4,6 +4,7 @@ import { useChildren, useItem, useOnDeck, type ChildItem } from "@/api/hooks";
 import type { Chapter, ItemDetail } from "@/api/types";
 import { useAudioPlayer, useAudioTime } from "@/audio/AudioPlayer";
 import { Button, ProgressBar, SectionTitle, Skeleton } from "@/components/ui";
+import { currentLocale } from "@/i18n";
 import { cn } from "@/lib/cn";
 import { formatClock, formatDuration } from "@/lib/format";
 import { usePlayItem } from "@/lib/usePlayItem";
@@ -14,6 +15,12 @@ import { Genres, ItemArt, Labels, MetaLine, SectionError, Summary, WatchedButton
 export function joinNames(names: string[], and: string): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} ${and} ${names[names.length - 1]}`;
+}
+
+/** "37 %", in the language shown; never 100 % before the end. */
+function percent(fraction: number): string {
+  const floored = Math.min(0.99, Math.floor(fraction * 100) / 100);
+  return new Intl.NumberFormat(currentLocale(), { style: "percent" }).format(floored);
 }
 
 /** How much of a book has been heard: its finished parts, and the one part way through. */
@@ -70,7 +77,14 @@ export function BookView({ item }: { item: ItemDetail }) {
           <ItemArt item={item} aspect="square" width={240} />
         </div>
         <div className="min-w-0 flex-1 space-y-3">
-          <div className="text-sm font-medium text-muted">{series ?? t("book.kind")}</div>
+          <div className="flex flex-wrap items-center gap-2.5 text-sm font-medium text-muted">
+            <span>{series ?? t("book.kind")}</span>
+            {started && totalMs ? (
+              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-semibold text-accent">
+                {t("book.percentListened", { percent: percent(heard / totalMs) })}
+              </span>
+            ) : null}
+          </div>
           <h1 className="text-3xl font-bold leading-tight tracking-tight text-balance sm:text-5xl">{item.title}</h1>
           {book?.authors.length ? (
             <div className="text-lg font-semibold">{t("book.by", { names: joinNames(book.authors, and) })}</div>

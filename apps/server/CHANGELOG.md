@@ -21,8 +21,9 @@ describes how they are made.
   and in their library. A part is finished only in its last 30 seconds,
   not at 90 % as a film is.
 - In the web app, audiobook libraries can be added, and a book's page
-  lists its parts or chapters. Its player skips back 15 seconds and on 30,
-  plays from 0.75× to 3×, and has a sleep timer.
+  says how much is listened and lists its parts or chapters. Its player
+  follows the chapter playing, skips back 15 seconds and on 30, plays from
+  0.75× to 3×, and has a sleep timer.
 
 ### Fixed
 

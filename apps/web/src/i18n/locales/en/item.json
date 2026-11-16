@@ -311,6 +311,11 @@
     "upTo": "Up to {{part}}",
     "parts": "Parts",
     "chapters": "Chapters",
-    "heard": "Finished"
+    "heard": "Finished",
+    "markListened": "Mark as listened",
+    "markUnlistened": "Mark as not listened",
+    "listened": "Listened",
+    "unlistened": "Not listened",
+    "percentListened": "{{percent}} listened"
   }
 }

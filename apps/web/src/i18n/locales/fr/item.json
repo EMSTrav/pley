@@ -325,6 +325,11 @@
     "upTo": "Vous en êtes à {{part}}",
     "parts": "Parties",
     "chapters": "Chapitres",
-    "heard": "Terminé"
+    "heard": "Terminé",
+    "markListened": "Marquer comme écouté",
+    "markUnlistened": "Marquer comme non écouté",
+    "listened": "Écouté",
+    "unlistened": "Non écouté",
+    "percentListened": "{{percent}} écouté"
   }
 }

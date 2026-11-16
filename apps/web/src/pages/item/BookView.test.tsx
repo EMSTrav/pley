@@ -54,6 +54,13 @@ describe("joinNames", () => {
 });
 
 describe("a book's page", () => {
+  it("says nothing of how much is heard before it's started", async () => {
+    serve([part(31, 1)], part(31, 1));
+    show(book());
+    expect(await screen.findByRole("button", { name: "Play" })).toBeEnabled();
+    expect(screen.queryByText(/% listened$/)).not.toBeInTheDocument();
+  });
+
   it("says who wrote and reads it, its series and its parts", async () => {
     serve([part(31, 1), part(32, 2)], part(31, 1));
     show(book());
@@ -77,6 +84,10 @@ describe("a book's page", () => {
     expect(screen.getByText("20m left")).toBeInTheDocument();
     expect(screen.getByText("Up to Chapter 2")).toBeInTheDocument();
     expect(screen.getByLabelText("Finished")).toBeInTheDocument();
+    // Two thirds heard, said at the top, rounded down.
+    expect(screen.getByText("66% listened")).toBeInTheDocument();
+    // Books are listened to, not watched.
+    expect(screen.getByRole("button", { name: "Listened" })).toHaveAttribute("title", "Mark as listened");
   });
 
   it("plays the part chosen", async () => {

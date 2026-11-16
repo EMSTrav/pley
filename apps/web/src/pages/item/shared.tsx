@@ -195,7 +195,22 @@ export function WatchedButton({ item, compact }: { item: ItemSummary; compact?: 
   const watched = isContainer
     ? item.leaf_count != null && item.leaf_count > 0 && (item.viewed_leaf_count ?? 0) >= item.leaf_count
     : item.user_state.watched;
-  const label = watched ? t("watched.markUnwatched") : t("watched.markWatched");
+  // Books are listened to, not watched.
+  const book = item.kind === "audiobook";
+  const label = book
+    ? watched
+      ? t("book.markUnlistened")
+      : t("book.markListened")
+    : watched
+      ? t("watched.markUnwatched")
+      : t("watched.markWatched");
+  const text = book
+    ? watched
+      ? t("book.unlistened")
+      : t("book.listened")
+    : watched
+      ? t("watched.unwatched")
+      : t("watched.watched");
   const onClick = () =>
     setWatched.mutate(
       { id: item.id, watched: !watched },
@@ -219,7 +234,7 @@ export function WatchedButton({ item, compact }: { item: ItemSummary; compact?: 
       title={label}
       className="max-sm:w-11 max-sm:px-0"
     >
-      <span className="hidden sm:inline">{watched ? t("watched.unwatched") : t("watched.watched")}</span>
+      <span className="hidden sm:inline">{text}</span>
     </Button>
   );
 }
