@@ -5,7 +5,7 @@
 //! control it through the session, as they control Pley's own players.
 
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,7 @@ use super::{Found, Protocol};
 use crate::auth::{AuthUser, CurrentToken};
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
+use crate::network::{Kind, Listener};
 use crate::playback::{Control, Method, PlaybackRequest};
 use crate::state::AppState;
 
@@ -384,6 +385,49 @@ impl Attempt<'_> {
     }
 }
 
+/// The devices on the server's network that a cast can send to Pley's web
+/// port ([`base_url`]), as [`super::NearbyDevices::listed`] finds them.
+/// None, without a look, while Pley listens only on this computer (behind a
+/// reverse proxy), where a cast to any would only fail. The log says once
+/// that devices were left out.
+pub async fn reachable(state: &AppState) -> Vec<Found> {
+    let fixed = state.config.cast_fixed.found();
+    if state.config.cast_fixed.server.is_none() && !listens_on_network(&state.network.listeners()) {
+        say_unreachable(state);
+        return Vec::new();
+    }
+    let found = state.nearby.listed(fixed, state.network.wanted().discovery).await;
+    let all = found.len();
+    let reachable: Vec<Found> = found.into_iter().filter(|d| base_url(state, d.address).is_some()).collect();
+    if reachable.len() < all {
+        say_unreachable(state);
+    }
+    reachable
+}
+
+fn say_unreachable(state: &AppState) {
+    if !state.nearby.said_unreachable.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            "Google Cast and AirPlay devices that can't reach Pley's web port aren't offered in Play on…: Pley \
+             listens on no address of their network (Settings → Network)"
+        );
+    }
+}
+
+/// Whether Pley's web port listens beyond this computer: on every address,
+/// or on one of a network.
+fn listens_on_network(listeners: &[Listener]) -> bool {
+    listeners.iter().any(|l| l.kind == Kind::Web && l.error.is_none() && !l.address.ip().is_loopback())
+}
+
+/// The web port's listener a device reaches when this computer's address on
+/// the way to it is `ip`.
+fn web_listener(listeners: &[Listener], ip: IpAddr) -> Option<&Listener> {
+    listeners
+        .iter()
+        .find(|l| l.kind == Kind::Web && l.error.is_none() && (l.address.ip().is_unspecified() || l.address.ip() == ip))
+}
+
 /// Where the device reaches Pley's web port: the address of this computer
 /// on the way to it.
 fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
@@ -394,11 +438,7 @@ fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
     local.connect(device).ok()?;
     let ip = local.local_addr().ok()?.ip();
     let listeners = state.network.listeners();
-    let web = listeners.iter().find(|l| {
-        l.kind == crate::network::Kind::Web
-            && l.error.is_none()
-            && (l.address.ip().is_unspecified() || l.address.ip() == ip)
-    })?;
+    let web = web_listener(&listeners, ip)?;
     Some(format!("http://{}", SocketAddr::new(ip, web.address.port())))
 }
 
@@ -640,5 +680,40 @@ async fn record(
             }
         }
         Err(err) => tracing::warn!("couldn't keep a cast's place: {err}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listener(kind: Kind, address: &str, error: Option<&str>) -> Listener {
+        Listener { kind, address: address.parse().unwrap(), error: error.map(str::to_owned) }
+    }
+
+    #[test]
+    fn a_device_reaches_the_web_port_where_it_listens_on_the_way_to_it() {
+        let ip: IpAddr = "192.168.1.10".parse().unwrap();
+        let on = |listeners: &[Listener]| web_listener(listeners, ip).map(|l| l.address.to_string());
+        // On every address, or on this one.
+        assert_eq!(on(&[listener(Kind::Web, "0.0.0.0:7539", None)]), Some("0.0.0.0:7539".into()));
+        assert_eq!(on(&[listener(Kind::Web, "192.168.1.10:7539", None)]), Some("192.168.1.10:7539".into()));
+        // Not on another address, nor this computer alone, nor where it
+        // couldn't listen, nor another API's port.
+        assert_eq!(on(&[listener(Kind::Web, "10.0.0.5:7539", None)]), None);
+        assert_eq!(on(&[listener(Kind::Web, "127.0.0.1:7539", None)]), None);
+        assert_eq!(on(&[listener(Kind::Web, "0.0.0.0:7539", Some("in use"))]), None);
+        assert_eq!(on(&[listener(Kind::Jellyfin, "0.0.0.0:8096", None)]), None);
+    }
+
+    #[test]
+    fn behind_a_proxy_on_this_computer_pley_listens_on_no_network() {
+        assert!(!listens_on_network(&[]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "127.0.0.1:7539", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "[::1]:7539", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Plex, "0.0.0.0:32400", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", Some("in use"))]));
+        assert!(listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", None)]));
+        assert!(listens_on_network(&[listener(Kind::Web, "192.168.1.10:7539", None)]));
     }
 }

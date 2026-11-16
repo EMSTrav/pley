@@ -21,7 +21,8 @@ describes how they are made.
   once, with the code it shows, and administrators can forget pairings in
   Settings → Network. A TV running a Pley app is listed once, as the app.
   Macs are listed as computers, and the server's own Mac isn't listed.
-  They're listed while discovery is on in Settings → Network.
+  They're listed while discovery is on in Settings → Network and Pley
+  listens on an address of the network they're on.
 - The dashboard says what plays each session: a Pley app, an app through
   the Plex or Jellyfin API, Google Cast or AirPlay. Stopping one offers a
   message only for Pley apps, the only ones that show it.

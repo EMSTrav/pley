@@ -375,9 +375,10 @@ other apps (`pley_ct_…`), never with a session's
   what it hears within bounds; and keeps none of it, so no device can
   make it hold more.
 - Pley looks for Google Cast and AirPlay devices (`_googlecast._tcp`,
-  `_airplay._tcp`) only when a home member's remote lists devices, or
-  casts to or pairs with a device Pley doesn't keep, at most every 30
-  seconds, by one mDNS query from a port of its own, and only
+  `_airplay._tcp`) only when a home member's remote lists devices (and
+  Pley's web port listens beyond this computer), or casts to or pairs
+  with a device Pley doesn't keep, at most every 30 seconds, by one mDNS
+  query from a port of its own, and only
   while discovery is on: turned off in Settings → Network (or with
   `--no-discovery`), it doesn't look, and forgets the devices it found,
   which can't be cast to. Only answers from private and link-local

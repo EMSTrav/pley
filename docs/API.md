@@ -3879,7 +3879,10 @@ would.
   again first, as the list would. It doesn't look
   while discovery is off (Settings → Network, `--no-discovery`), and then
   lists none, nor from a Docker bridge network, which the announcements
-  don't reach. A Cast device at the address of a receiver
+  don't reach. It lists them only while its web port listens on an
+  address they reach, which a cast hands them: none, and no look, while
+  Pley listens on its own computer alone (behind a reverse proxy there),
+  and the log says so once. A Cast device at the address of a receiver
   in the same list that takes `item` is left out: it is the same TV, and
   the Pley app stands for it. One whose Pley app is on a profile the
   caller can't cast to stays listed. A cast there names a movie or an episode,

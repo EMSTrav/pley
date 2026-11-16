@@ -344,6 +344,17 @@ async fn a_pley_app_on_the_tv_stands_for_its_cast_device() {
 }
 
 #[tokio::test]
+async fn devices_that_cant_reach_pley_arent_listed() {
+    // Pley's web port listens on no address the device reaches, as when it
+    // listens on this computer alone, behind a reverse proxy.
+    let w = world_where(|config| config.cast_fixed.server = None).await;
+    assert!(!lists_cast(&w, &w.admin, "/api/remote/devices?nearby=1").await);
+    // A remote that listed it before is told why it can't cast there.
+    let cast = w.app.post("/api/remote/devices/cast:dev/cast", &w.admin, json!({"item_id": w.film})).await;
+    assert_eq!((cast.status, cast.body["code"].as_str()), (StatusCode::CONFLICT, Some("cast_unreachable")));
+}
+
+#[tokio::test]
 async fn only_airplay_devices_pair_and_only_administrators_list_pairings() {
     let w = world().await;
     w.app.get("/api/remote/devices?nearby=1", &w.admin).await;

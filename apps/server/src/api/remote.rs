@@ -954,7 +954,8 @@ pub async fn devices(
     if nearby && reaches_nearby(&user, home) {
         let taken: HashSet<IpAddr> =
             out.iter().filter(|d| d.casts.contains(&CastKind::Item)).filter_map(|d| d.address).collect();
-        let found = state.nearby.listed(state.config.cast_fixed.found(), state.network.wanted().discovery).await;
+        // Only those a cast can reach Pley from.
+        let found = crate::nearby::casts::reachable(&state).await;
         out.extend(found.into_iter().filter(|d| !taken.contains(&d.address.ip())).map(|d| RemoteDevice {
             receiver_id: d.key(),
             device_id: d.key(),

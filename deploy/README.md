@@ -169,8 +169,10 @@ containers and SSH sessions never show it; `--no-tray` turns it off.
 - **Google Cast devices** (Chromecasts, Google TVs) are found by mDNS too,
   and the server connects to them on **TCP 8009**, and once to each on
   **TCP 8008** to learn its model; they fetch the stream from the web
-  port. A container sees them only on the host's network, as above, and
-  not while discovery is off.
+  port, so Pley lists them only while that port listens on the local
+  network, not on this computer alone behind a reverse proxy. A container
+  sees them only on the host's network, as above, and not while discovery
+  is off.
 - **AirPlay devices** (Apple TVs, TVs with AirPlay 2) are found the same
   way. The server connects to them on the port they announce (**TCP
   7000** on an Apple TV) and on the port each names for its events, and the

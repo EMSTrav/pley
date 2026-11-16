@@ -12,7 +12,7 @@ pub mod player;
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -130,6 +130,9 @@ pub struct NearbyDevices {
     /// the one that stays.
     starting: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     casts: AtomicU64,
+    /// Whether the log said that devices were left out of the lists, as
+    /// none reaches Pley's web port ([`casts::reachable`]).
+    said_unreachable: AtomicBool,
     /// The models that refused their stream: they get the basic one,
     /// until the server restarts.
     refused: Mutex<HashSet<String>>,
