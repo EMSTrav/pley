@@ -28,6 +28,7 @@ const SORTS_BY_KIND: Record<LibraryKind, LibrarySort[]> = {
   movies: ["title", "year", "added", "rating", "user_rating", "release", "duration", "last_played", "bitrate"],
   shows: ["title", "year", "added", "rating", "user_rating", "release", "last_played", "bitrate"],
   music: ["title", "added", "user_rating", "last_played"],
+  audiobooks: ["title", "year", "added", "user_rating", "duration", "last_played"],
 };
 
 function defaultOrder(sort: LibrarySort): SortOrder {

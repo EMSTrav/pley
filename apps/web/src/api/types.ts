@@ -182,7 +182,7 @@ export interface LoginResponse {
   recovery_codes?: string[];
 }
 
-export type LibraryKind = "movies" | "shows" | "music";
+export type LibraryKind = "movies" | "shows" | "music" | "audiobooks";
 
 export interface Library {
   id: Id;

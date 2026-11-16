@@ -246,7 +246,7 @@ async fn matching_items(db: &Db, user_id: i64, reading: &Reading, year: Option<i
 }
 
 /// Where a kind of item comes in search results: movies, shows, seasons
-/// and episodes, then music.
+/// and episodes, then music, then audiobooks.
 fn search_order(kind: &str) -> u8 {
     match kind {
         "movie" => 0,
@@ -256,7 +256,9 @@ fn search_order(kind: &str) -> u8 {
         "artist" => 4,
         "album" => 5,
         "track" => 6,
-        _ => 7,
+        "audiobook" => 7,
+        "part" => 8,
+        _ => 9,
     }
 }
 
@@ -270,7 +272,7 @@ fn search_order(kind: &str) -> u8 {
 fn rank_items(rows: &mut Vec<ItemRow>, query: &Query, near: bool, limit: usize) {
     let text = query.text();
     let depth = |kind: &str| match kind {
-        "movie" | "show" | "artist" => 0,
+        "movie" | "show" | "artist" | "audiobook" => 0,
         "album" | "season" => 1,
         _ => 2,
     };

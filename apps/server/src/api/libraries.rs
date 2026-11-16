@@ -518,19 +518,27 @@ pub async fn hubs(
     let lib = visible_library(&state, &user, id).await?;
     let language = i18n::for_user(&state.db, user.id, &state.settings.get().language, &headers).await?;
     let kind = lib.kind();
-    let video = kind != LibraryKind::Music;
+    let video = !kind.is_audio();
     let top = kind.top_level_kind();
     let db = &state.db;
     // The hubs don't depend on each other: fetched at the same time.
     let (continuing, added, released, rated) = tokio::try_join!(
-        // Video-only hubs are empty for music.
-        async { if video { catalog::continue_watching(db, user.id, Some(lib.id), 20).await } else { Ok(Vec::new()) } },
+        // Video-only hubs are empty for music and audiobooks, which have
+        // books to continue instead.
+        async {
+            match kind {
+                LibraryKind::Audiobooks => catalog::continue_listening(db, user.id, Some(lib.id), 20).await,
+                _ if video => catalog::continue_watching(db, user.id, Some(lib.id), 20).await,
+                _ => Ok(Vec::new()),
+            }
+        },
         catalog::recently_added(db, user.id, lib.id, kind.as_str(), 30),
         async { if video { catalog::recently_released(db, user.id, lib.id, top, 30).await } else { Ok(Vec::new()) } },
         async { if video { catalog::top_rated(db, user.id, lib.id, top, 30).await } else { Ok(Vec::new()) } },
     )?;
     let added_title = match kind {
         LibraryKind::Music => "hubs.recentlyAddedAlbums",
+        LibraryKind::Audiobooks => "hubs.recentlyAddedBooks",
         LibraryKind::Shows => "hubs.recentlyAddedShows",
         LibraryKind::Movies => "hubs.recentlyAdded",
     };
@@ -541,7 +549,10 @@ pub async fn hubs(
         items: rows.iter().map(|r| r.to_summary()).collect(),
     };
     let mut hubs = vec![
-        hub("continue_watching", "hubs.continueWatching", continuing),
+        match kind {
+            LibraryKind::Audiobooks => hub("continue_listening", "hubs.continueListening", continuing),
+            _ => hub("continue_watching", "hubs.continueWatching", continuing),
+        },
         hub("recently_added", added_title, added),
         hub("recently_released", "hubs.recentlyReleased", released),
         hub("top_rated", "hubs.topRated", rated),

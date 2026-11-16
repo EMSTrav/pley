@@ -9,6 +9,18 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Audiobook libraries, in the server's API for now: books from `.m4b`
+  files or folders of audio files, laid out as Audiobookshelf's are
+  (`Author/Series/Book`), with their authors, narrators, series, summary
+  and cover from the files' tags, else from their folders. `.m4b` files'
+  chapters are read, and they play directly where `.m4a` does.
+- Play on an audiobook goes on in the part heard last, where it was left,
+  and books part way through are in a new Continue Listening row on Home
+  and in their library. A part is finished only in its last 30 seconds,
+  not at 90 % as a film is.
+
 ### Fixed
 
 - Play on… lists Google Cast and AirPlay devices only where Pley listens
