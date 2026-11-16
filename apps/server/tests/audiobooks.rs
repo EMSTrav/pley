@@ -423,3 +423,28 @@ async fn a_book_is_what_its_first_part_says() {
     assert_eq!(app.children(book, &token).await.len(), 1);
     assert_eq!(details().await, (json!("Tagged Title"), json!(["Author G"]), json!("From the second part.")));
 }
+
+/// A book's series is read from the tags Libation, tone and
+/// Audiobookshelf write: `part` for its place, and `grouping`.
+#[tokio::test]
+async fn series_from_the_tags_tools_write() {
+    let (app, token) = tagged_app().await;
+    tagged(&app, "books/Author A/Book Twelve.m4b", json!({"album": "Book Twelve", "series": "Series Y", "part": "3"}));
+    tagged(&app, "books/Author A/Book Thirteen.m4b", json!({"album": "Book Thirteen", "grouping": "Series Z #2"}));
+    tagged(&app, "books/Author A/Book Fourteen.m4b", json!({"album": "Book Fourteen", "grouping": "Fantasy"}));
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+
+    let ids = app.ids(lib, &token).await;
+    let series = |title: &str| {
+        let id = ids[title];
+        let app = &app;
+        let token = &token;
+        async move {
+            let book = &app.get(&format!("/api/items/{id}"), token).await.body["book"];
+            (book["series"].clone(), book["series_index"].clone())
+        }
+    };
+    assert_eq!(series("Book Twelve").await, (json!("Series Y"), json!(3.0)));
+    assert_eq!(series("Book Thirteen").await, (json!("Series Z"), json!(2.0)));
+    assert_eq!(series("Book Fourteen").await, (Value::Null, Value::Null));
+}

@@ -47,9 +47,11 @@ the Plex- and Jellyfin-compatible APIs don't get them.
 - A book is what its first part says, by its tags, which win over its
   folders: `album` is the book, `album_artist` or `artist` its authors
   (`;`, `&` or `/` between several), `composer` or `narrator` its
-  narrators, `series` and `series-part` its series, `description` or
-  `synopsis` its summary (`comment` without them). A scan reads them
-  again when the book's files change.
+  narrators, `series` and `series-part` (or `part`, as Libation and tone
+  write it) its series, or else a `grouping` as Audiobookshelf writes it
+  (`Series #2`, `Series, Book 2`), `description` or `synopsis` its
+  summary (`comment` without them). A scan reads them again when the
+  book's files change.
 - The cover is a picture named after an `.m4b` beside it, `cover.jpg` or
   `folder.jpg` in the book's folder, or else the one inside its files.
   Books side by side in their author's or their series' folder don't take

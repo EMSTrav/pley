@@ -528,6 +528,19 @@ static YEAR_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^((?:1[5-9]|20)\d{2})[ ._]*[-–][ ._]*(.+)$").unwrap());
 /// A narrator in braces, as Audiobookshelf names folders: `Book One {Narrator B}`.
 static NARRATOR_BRACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*\{([^}]+)\}\s*").unwrap());
+/// A series and the book's place in it, as Audiobookshelf writes them in a
+/// `grouping` tag: `Series #2`, `Series, Book 2.5`.
+static GROUPING_SERIES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^([^#;]+?)(?:\s*#\s*|\s*,\s*book\s+)(\d{1,4}(?:\.\d{1,2})?)$").unwrap());
+
+/// The series a `grouping` tag names, and the book's place in it: only one
+/// written as Audiobookshelf writes it, as others put genres or anything
+/// else there.
+fn series_in_grouping(grouping: &str) -> Option<(String, Option<f64>)> {
+    let c = GROUPING_SERIES.captures(grouping.trim())?;
+    let series = c[1].trim();
+    (!series.is_empty()).then(|| (series.to_owned(), c[2].parse().ok()))
+}
 
 /// Names in one tag: `Author A; Author B`, `A & B`, `A / B`.
 /// Commas stay, as in `Last, First`.
@@ -666,12 +679,17 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         .map(names)
         .or_else(|| folder_narrator.map(|n| names(&n)))
         .unwrap_or_default();
-    let series = tag(tags, &["series", "movementname", "mvnm"])
-        .map(str::to_owned)
+    let tagged_series = tag(tags, &["series", "movementname", "mvnm"]).map(str::to_owned);
+    let grouping = tag(tags, &["grouping"]).filter(|_| tagged_series.is_none()).and_then(series_in_grouping);
+    let series = tagged_series
+        .or_else(|| grouping.as_ref().map(|(series, _)| series.clone()))
         .or_else(|| folder_series.map(|s| s.replace('_', " ").trim().to_owned()))
         .filter(|s| !s.is_empty());
-    let series_index = tag(tags, &["series-part", "series_part", "seriespart", "movement", "mvin"])
+    // `part` last: Libation and tone write the place in a series as
+    // `----:com.pilabor.tone:PART`, which FFmpeg reads as `part`.
+    let series_index = tag(tags, &["series-part", "series_part", "seriespart", "movement", "mvin", "part"])
         .and_then(|v| v.trim().parse().ok())
+        .or(grouping.and_then(|(_, index)| index))
         .or(folder_index)
         .filter(|_| series.is_some());
     let year = tag(tags, &["date", "year", "originaldate", "original_date"])
@@ -1076,6 +1094,34 @@ mod tests {
         assert_eq!(one.book_key, two.book_key);
         assert_eq!((one.disc, two.disc, one.part), (Some(1), Some(2), Some(1)));
         assert_eq!((one.authors.as_slice(), one.series), (["Author D".to_owned()].as_slice(), None));
+    }
+
+    #[test]
+    fn series_from_the_tags_tools_write() {
+        let series = |pairs: &[(&str, &str)]| {
+            let b = parse_audiobook(Path::new("/books/Author/Book/01.mp3"), Path::new("/books"), &tags(pairs));
+            (b.series, b.series_index)
+        };
+        let some = |name: &str, index: Option<f64>| (Some(name.to_owned()), index);
+        // Libation's and tone's place in a series, after the others.
+        assert_eq!(series(&[("series", "Series Y"), ("part", "3")]), some("Series Y", Some(3.0)));
+        assert_eq!(series(&[("series", "Series Y"), ("series-part", "2"), ("part", "3")]), some("Series Y", Some(2.0)));
+        assert_eq!(series(&[("part", "3")]), (None, None), "a place in no series is nothing");
+        // Audiobookshelf's `grouping`, when no other tag names a series.
+        assert_eq!(series(&[("grouping", "Series Z #2")]), some("Series Z", Some(2.0)));
+        assert_eq!(series(&[("grouping", "Series Z, Book 2.5")]), some("Series Z", Some(2.5)));
+        assert_eq!(series(&[("grouping", "Series Z #2"), ("series-part", "4")]), some("Series Z", Some(4.0)));
+        assert_eq!(series(&[("grouping", "Series Z #2"), ("series", "Series Y")]), some("Series Y", None));
+        // Anything else there is no series.
+        for grouping in ["Fantasy", "Series Z", "Series A #1; Series B #2", "#2", "Series Z #two"] {
+            assert_eq!(series(&[("grouping", grouping)]), (None, None), "{grouping}");
+        }
+        let b = parse_audiobook(
+            Path::new("/books/Author/Series X/Book/01.mp3"),
+            Path::new("/books"),
+            &tags(&[("grouping", "Fantasy")]),
+        );
+        assert_eq!(b.series.as_deref(), Some("Series X"), "the folders still say");
     }
 
     #[test]
