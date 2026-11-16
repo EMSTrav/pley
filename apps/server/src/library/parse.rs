@@ -667,8 +667,9 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
     let from_stem = book_folder(&stem);
 
     // `Author/Book.m4b`: the folder is the author's, unless it has the
-    // book's name, by its album or its file.
-    let in_authors_folder = m4b && dirs.len() == 1 && {
+    // book's name, by its album or its file. Above a `CD 1` folder, it is
+    // the book's.
+    let in_authors_folder = m4b && dirs.len() == 1 && folder_disc.is_none() && {
         let name = normalize_key(&book_folder(&dirs[0]).0);
         album.as_deref().is_none_or(|a| normalize_key(a) != name) && normalize_key(&from_stem.0) != name
     };
@@ -678,7 +679,8 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
     let folder_author = above.first();
     let folder_series = above.get(1);
 
-    let by_file = dirs.is_empty() || (m4b && album.is_none());
+    // An `.m4b` on a disc of a book is a part of it, tagged or not.
+    let by_file = dirs.is_empty() || (m4b && album.is_none() && folder_disc.is_none());
     let book_key = match &album {
         _ if by_file => path_key(path),
         // A line break, which no folder's name has, keeps the folder and
@@ -1097,6 +1099,21 @@ mod tests {
         let b = book("Book Seven (2001)/Rip Name.m4b", &[("album", "Book Seven")]);
         assert_eq!((b.book_dir, b.title.as_str()), (Some(root.join("Book Seven (2001)")), "Book Seven"));
         assert_eq!((b.year, b.authors.as_slice()), (Some(2001), ["Unknown Author".to_owned()].as_slice()));
+
+        // Untagged `.m4b` files on the discs of a book are its parts, and the
+        // folder above the discs is the book's, at the top of the library too.
+        let one = book("Author D/Book Eight/CD 1/01.m4b", &[]);
+        let two = book("Author D/Book Eight/CD 2/01.m4b", &[]);
+        assert_eq!(
+            (one.book_key.as_str(), two.book_key.as_str()),
+            (key("Author D/Book Eight").as_str(), key("Author D/Book Eight").as_str())
+        );
+        assert_eq!((one.title.as_str(), one.disc, two.disc), ("Book Eight", Some(1), Some(2)));
+        let b = book("Book Eight/CD 1/Rip Name.m4b", &[]);
+        assert_eq!(
+            (b.book_dir, b.title.as_str(), b.authors.as_slice()),
+            (Some(root.join("Book Eight")), "Book Eight", ["Unknown Author".to_owned()].as_slice())
+        );
 
         // Files at the top of a book's folder at the top: one book, by no
         // one known.
