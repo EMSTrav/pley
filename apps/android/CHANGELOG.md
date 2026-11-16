@@ -10,6 +10,15 @@ describes how they are made.
 
 ### Added
 
+- Administrators manage the server's dashboard, libraries, users and
+  invitations from a phone or tablet, in Me → Manage server, once they
+  tick Manage the server as the phone signs in. A phone signed in before,
+  or without it ticked, asks to sign in again for it in the browser; one
+  with no browser says it needs one, as a code never allows it. Another
+  administrator's account is only shown there: the web app changes it.
+  Disabling an account and removing a PIN ask first; the dashboard says
+  when its numbers stopped updating, and a page says so when the phone can
+  no longer manage the server.
 - Play on… lists Google Cast and AirPlay devices for movies and episodes.
   An AirPlay device asks once for the code it shows; on an Apple TV the
   code goes as its fourth digit is typed.
@@ -19,9 +28,16 @@ describes how they are made.
 
 ### Fixed
 
+- Sign in again, offered where the app's sign-in didn't allow something
+  (managing the server, asking for movies and shows), opens the server's
+  sign-in page instead of going back to Home.
 - Live TV goes quiet while another app plays, a call included, instead of
   playing over it or taking the sound back. Its sound comes back once the
   other app is done, or with the next channel after music or a video.
+- A movie or episode with several versions plays the same version from
+  its page as from Home and Continue Watching: the one downloaded, else
+  the one this device plays best, unless you pick another. The page's
+  badges and tracks are that version's.
 
 ## [0.1.13] - 2026-11-14
 

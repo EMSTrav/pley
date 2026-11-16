@@ -537,6 +537,49 @@ fn check_track(streams: &[MediaStream], kind: StreamKind, index: i64, field: &st
     }))
 }
 
+/// The audio and the subtitles a cast of a movie or an episode names, by
+/// stream index, checked against the tracks of its versions (`files`), as
+/// its receiver is to take them: see [`same_in_every_version`].
+fn cast_tracks(
+    files: &[catalog::FileRow],
+    audio: Option<i64>,
+    subtitles: Option<i64>,
+) -> ApiResult<(Option<i64>, Option<i64>)> {
+    let versions: Vec<Vec<MediaStream>> = files.iter().map(catalog::FileRow::streams).collect();
+    let streams = versions.concat();
+    if let Some(index) = audio {
+        check_track(&streams, StreamKind::Audio, index, "audio_index")?;
+    }
+    if let Some(index) = subtitles {
+        check_track(&streams, StreamKind::Subtitle, index, "subtitle_index")?;
+    }
+    Ok((
+        same_in_every_version(&versions, StreamKind::Audio, audio),
+        same_in_every_version(&versions, StreamKind::Subtitle, subtitles),
+    ))
+}
+
+/// The track of `kind` a cast names, by stream index, kept where it is the
+/// same track (language, title, forced) in every version of the title. The
+/// remote picked it from the version its page shows, but the receiver plays
+/// a version of its own choosing (the one it plays best, or the first),
+/// where the same index can be another language.
+/// Left out, the receiver starts with what the profile's saved choice, which
+/// the remote's pick saved, gives its own version. Subtitles off (`-1`) are
+/// the same in every version.
+fn same_in_every_version(versions: &[Vec<MediaStream>], kind: StreamKind, index: Option<i64>) -> Option<i64> {
+    let index = index?;
+    if kind == StreamKind::Subtitle && index == -1 {
+        return Some(index);
+    }
+    let mut tracks = versions.iter().map(|streams| {
+        let track = streams.iter().find(|s| s.kind == kind && s.index == index);
+        track.map(|s| (crate::streams::is_forced(s), s.language.as_deref(), s.title.as_deref()))
+    });
+    let first = tracks.next().flatten()?;
+    tracks.all(|track| track == Some(first)).then_some(index)
+}
+
 fn words(command: Control) -> &'static str {
     match command {
         Control::Play => "play",
@@ -1119,19 +1162,8 @@ async fn cast_to_device(state: &AppState, user: &AuthUser, id: &str, body: Cast)
         return Err(AppError::bad_request(format!("start_ms must be between 0 and {MAX_UNKNOWN_SEEK_MS}")));
     }
     let files = catalog::files_for_item(&state.db, row.id).await?;
-    let streams: Vec<MediaStream> = files.iter().flat_map(|f| f.streams()).collect();
-    if let Some(index) = body.audio_index {
-        check_track(&streams, StreamKind::Audio, index, "audio_index")?;
-    }
-    if let Some(index) = body.subtitle_index {
-        check_track(&streams, StreamKind::Subtitle, index, "subtitle_index")?;
-    }
-    let cast = crate::nearby::casts::Cast {
-        item_id,
-        start_ms: body.start_ms,
-        audio_index: body.audio_index,
-        subtitle_index: body.subtitle_index,
-    };
+    let (audio_index, subtitle_index) = cast_tracks(&files, body.audio_index, body.subtitle_index)?;
+    let cast = crate::nearby::casts::Cast { item_id, start_ms: body.start_ms, audio_index, subtitle_index };
     // Started apart from the request, which a client or a proxy may drop
     // while the device loads: the cast then either plays and is followed,
     // or ends its session.
@@ -1194,6 +1226,7 @@ pub async fn cast(
     // The device another profile's receiver is, which switches.
     let device = (owner != user.id).then(|| receiver.device_id.clone());
     let picked = body.audio_index.is_some() || body.subtitle_index.is_some();
+    let (mut audio_index, mut subtitle_index) = (None, None);
     let kind = match (body.item_id, body.playlist_id, body.channel_id) {
         (Some(item_id), None, None) => {
             let row = item_or_404(&state, user.id, item_id).await?;
@@ -1210,13 +1243,7 @@ pub async fn cast(
                     return Err(AppError::bad_request("audio_index and subtitle_index go with a movie or an episode"));
                 }
                 let files = catalog::files_for_item(&state.db, row.id).await?;
-                let streams: Vec<MediaStream> = files.iter().flat_map(|f| f.streams()).collect();
-                if let Some(index) = body.audio_index {
-                    check_track(&streams, StreamKind::Audio, index, "audio_index")?;
-                }
-                if let Some(index) = body.subtitle_index {
-                    check_track(&streams, StreamKind::Subtitle, index, "subtitle_index")?;
-                }
+                (audio_index, subtitle_index) = cast_tracks(&files, body.audio_index, body.subtitle_index)?;
             }
             CastKind::Item
         }
@@ -1290,8 +1317,8 @@ pub async fn cast(
         channel_id: body.channel_id,
         start_ms: body.start_ms,
         shuffle: body.shuffle.unwrap_or(false),
-        audio_index: body.audio_index,
-        subtitle_index: body.subtitle_index,
+        audio_index,
+        subtitle_index,
         from,
         profile_id: switch_ticket.is_some().then_some(user.id),
         switch_ticket,
@@ -1310,9 +1337,10 @@ async fn has_pin(state: &AppState, id: i64) -> ApiResult<bool> {
 /// has it): a caster freer than `owner` takes a PIN, and one that has to
 /// set up two-step sign-in, which the server requires, can't be switched
 /// to. An administrator's profile goes only to an app's device
-/// (`device_id`), whose tokens never have administrator rights: a browser's
-/// or the desktop app's sign-in would stay one with them. The PIN itself is
-/// checked next.
+/// (`device_id`), whose tokens never have administrator rights, nor, once
+/// a cast switched it, that role's rights over others, whoever allowed the
+/// app ([`AuthUser::role_holds`]): a browser's or the desktop app's sign-in
+/// would stay one with them. The PIN itself is checked next.
 async fn check_cast_switch(state: &AppState, owner: i64, caster: i64, device_id: &str) -> ApiResult<()> {
     let (Some(device), Some(to)) =
         (switch_target(state, owner, owner).await?, switch_target(state, owner, caster).await?)
@@ -1356,7 +1384,13 @@ mod tests {
             all_libraries: true,
             max_age: None,
             app: app.map(|client_id| {
-                Arc::new(AppAccess { grant_id: 7, client_id: client_id.into(), scopes: Scopes::all(), approved_by: 1 })
+                Arc::new(AppAccess {
+                    grant_id: 7,
+                    client_id: client_id.into(),
+                    scopes: Scopes::all(),
+                    approved_by: 1,
+                    by_cast: false,
+                })
             }),
             compatibility: token.then_some(CompatibilityAccess { token_id: 3, scopes: compatibility::Scopes::play() }),
         }

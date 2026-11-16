@@ -1246,6 +1246,77 @@ async fn a_cast_carries_the_tracks_picked() {
     }
 }
 
+/// Gives the film (with [`with_tracks`]) a second version whose tracks are
+/// laid out otherwise: English audio, then an English commentary, the
+/// forced English signs, then full English subtitles.
+async fn with_second_version(w: &World) {
+    use pley_transcoder_api::{MediaInfo, MediaStream, StreamKind};
+    let stream = |index, kind, language: &str, title: Option<&str>| MediaStream {
+        index,
+        kind,
+        codec: if kind == StreamKind::Subtitle { "subrip" } else { "aac" }.into(),
+        language: Some(language.to_owned()),
+        title: title.map(str::to_owned),
+        ..Default::default()
+    };
+    let mut video = MediaStream { index: 0, kind: StreamKind::Video, codec: "h264".into(), ..Default::default() };
+    (video.width, video.height, video.pix_fmt) = (Some(1920), Some(1080), Some("yuv420p".into()));
+    let mut english = stream(1, StreamKind::Audio, "eng", None);
+    english.default = true;
+    let mut signs = stream(3, StreamKind::Subtitle, "eng", Some("Signs"));
+    signs.forced = true;
+    let streams = vec![
+        video,
+        english,
+        stream(2, StreamKind::Audio, "eng", Some("Commentary")),
+        signs,
+        stream(4, StreamKind::Subtitle, "eng", None),
+    ];
+    let info = MediaInfo { container: Some("mkv".into()), duration_ms: Some(LENGTH_MS), streams, ..Default::default() };
+    sqlx::query(
+        "INSERT INTO media_files (item_id, library_id, path, size, mtime, added_at, updated_at, media_info,
+                                  video_codec, audio_codec)
+         SELECT item_id, library_id, path || '.other.mkv', size, mtime, added_at, updated_at, ?, 'h264', 'aac'
+         FROM media_files WHERE id = ?",
+    )
+    .bind(serde_json::to_string(&info).unwrap())
+    .bind(w.app.file_of(w.film).await)
+    .execute(&w.app.state.db.write)
+    .await
+    .unwrap();
+}
+
+/// The audio and the subtitles a cast of the film that picked `audio` and
+/// `subtitles` reaches `tv-1` with.
+async fn tracks_cast(w: &World, audio: i64, subtitles: i64) -> (Value, Value) {
+    let send = async {
+        let body = json!({"item_id": w.film, "audio_index": audio, "subtitle_index": subtitles});
+        let sent = cast(w, &w.viewer, "tv-1", body).await;
+        assert_eq!(sent.status, StatusCode::ACCEPTED, "{}", sent.text());
+    };
+    let heard = events_until(w, &w.viewer, send, r#""type":"cast""#, Duration::from_secs(10)).await;
+    let event = &events_of(&heard, "cast")[0];
+    (event["audio_index"].clone(), event["subtitle_index"].clone())
+}
+
+#[tokio::test]
+async fn a_cast_carries_a_track_only_where_it_is_the_same_in_every_version() {
+    let w = world().await;
+    with_tracks(&w).await;
+    with_second_version(&w).await;
+    let _tv = stream(&w, &w.viewer, "receiver=tv-1&casts=item").await;
+    // The receiver plays the version it plays best: an index that is the
+    // same track in both goes, as do subtitles off.
+    assert_eq!(tracks_cast(&w, 1, 3).await, (json!(1), json!(3)));
+    assert_eq!(tracks_cast(&w, 1, -1).await, (json!(1), json!(-1)));
+    // French in one version is the commentary or English in the other: the
+    // receiver starts with what the saved choice gives the version it plays.
+    assert_eq!(tracks_cast(&w, 2, 4).await, (Value::Null, Value::Null));
+    // One version alone, as before.
+    sqlx::query("DELETE FROM media_files WHERE path LIKE '%.other.mkv'").execute(&w.app.state.db.write).await.unwrap();
+    assert_eq!(tracks_cast(&w, 2, 4).await, (json!(2), json!(4)));
+}
+
 /// Where the cast `token` sends to `tv-1`, saying `user_agent`, says it
 /// came from.
 async fn cast_from(w: &World, token: &str, user_agent: &str) -> Value {
@@ -1780,6 +1851,67 @@ async fn a_freer_profile_casts_to_another_profiles_device_only_with_its_pin() {
     let refused = app.form_post("/api/oauth/token", &form(&pairs), &[]).await;
     assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{}", refused.text());
     assert_eq!(id_of(&w, &access).await, w.viewer_id);
+}
+
+#[tokio::test]
+async fn a_cast_switches_an_app_to_an_administrator_without_their_rights_over_others() {
+    let w = world().await;
+    let app = &w.app;
+    let admin_id = id_of(&w, &w.admin).await;
+    let pinned = app.put("/api/me/pin", &w.admin, json!({"pin": "2468", "password": "secret-one"})).await;
+    assert_eq!(pinned.status, StatusCode::NO_CONTENT, "{}", pinned.text());
+    // The app's switch-profile grant: its new access and refresh tokens.
+    let switch = async |refresh: &str, profile: i64, with: Option<(&str, &str)>| {
+        let profile = profile.to_string();
+        let mut pairs = vec![
+            ("grant_type", SWITCH),
+            ("client_id", common::ANDROID_APP),
+            ("refresh_token", refresh),
+            ("profile", profile.as_str()),
+        ];
+        pairs.extend(with);
+        let reply = app.form_post("/api/oauth/token", &form(&pairs), &[]).await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+        let token = |name: &str| reply.body[name].as_str().unwrap().to_owned();
+        (token("access_token"), token("refresh_token"))
+    };
+    // Whether the app is told it manages the server, and does.
+    let manages = async |access: &str| {
+        let told = app.get("/api/auth/me", access).await.body["account_admin"].clone();
+        let users = app.get("/api/users", access).await.status;
+        assert_eq!(told == json!(true), users == StatusCode::OK, "{told} {users}");
+        users == StatusCode::OK
+    };
+
+    // The viewer's phone, which the administrator signed in themselves,
+    // allowing it to manage the server, and left on the viewer's profile.
+    let (own, refresh) = app.app_token(admin_id, "library play profiles approvals server").await;
+    assert!(manages(&own).await, "on their profile, as they signed in");
+    let (viewers, refresh) = switch(&refresh, w.viewer_id, None).await;
+    assert_eq!(id_of(&w, &viewers).await, w.viewer_id);
+    assert!(!manages(&viewers).await);
+
+    // The administrator casts to it, their PIN given on their own device:
+    // the phone plays as them, and whoever holds it manages nothing.
+    let mut phone = stream(&w, &viewers, "receiver=phone-1&casts=item,switch").await;
+    let body = json!({"item_id": w.film, "profile_id": w.viewer_id, "pin": "2468"});
+    let sent = cast(&w, &w.admin, "phone-1", body).await;
+    assert_eq!(sent.status, StatusCode::ACCEPTED, "{}", sent.text());
+    let ticket = heard_cast(&mut phone).await["switch_ticket"].as_str().unwrap().to_owned();
+    let (cast_to, refresh) = switch(&refresh, admin_id, Some(("ticket", &ticket))).await;
+    assert_eq!(id_of(&w, &cast_to).await, admin_id, "the app acts as the caster's profile");
+    assert_eq!(app.get("/api/libraries", &cast_to).await.status, StatusCode::OK, "and plays as it");
+    assert!(!manages(&cast_to).await, "a cast gives none of the role's rights over others");
+    // Nor after a refresh.
+    let pairs = [("grant_type", "refresh_token"), ("client_id", common::ANDROID_APP), ("refresh_token", &refresh)];
+    let refreshed = app.form_post("/api/oauth/token", &form(&pairs), &[]).await;
+    assert_eq!(refreshed.status, StatusCode::OK, "{}", refreshed.text());
+    assert!(!manages(refreshed.body["access_token"].as_str().unwrap()).await);
+    let refresh = refreshed.body["refresh_token"].as_str().unwrap().to_owned();
+
+    // The administrator picks their profile on the phone, with their PIN.
+    let (picked, _) = switch(&refresh, admin_id, Some(("pin", "2468"))).await;
+    assert!(manages(&picked).await, "picked on the device: theirs again");
 }
 
 #[tokio::test]
