@@ -5,7 +5,7 @@
 //! control it through the session, as they control Pley's own players.
 
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -13,15 +13,18 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use parking_lot::Mutex;
+use pley_transcoder_api::{MediaStream, StreamKind};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::player::{Ended, Event, Failure, Media, Player, State as Playing, Subtitle};
 use super::{Found, Protocol};
 use crate::auth::{AuthUser, CurrentToken};
+use crate::catalog::ItemRow;
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
-use crate::playback::{Control, Method, PlaybackRequest};
+use crate::network::{Kind, Listener};
+use crate::playback::{Control, Method, PlaybackMode, PlaybackRequest, Pool};
 use crate::state::AppState;
 
 /// How often the device is asked where it is, and its place kept.
@@ -75,15 +78,17 @@ pub struct Choice {
 /// `cast_within`) ends as one the device didn't play.
 pub async fn start(state: &AppState, user: &AuthUser, device: Found, mut cast: Cast) -> ApiResult<()> {
     let deadline = tokio::time::Instant::now() + state.config.cast_within;
+    let row = crate::api::items::item_or_404(state, user.id, cast.item_id).await?;
     // A cast that names no place starts where Play would, so it doesn't
     // start over and save the beginning over the place someone left off.
     if cast.start_ms.is_none() {
-        let row = crate::api::items::item_or_404(state, user.id, cast.item_id).await?;
         cast.start_ms = Some(crate::api::items::resume_ms(&row));
     }
-    let base = base_url(state, device.address).ok_or_else(|| {
-        AppError::ConflictAs("cast_unreachable", "Pley doesn't listen on an address the device can reach".to_owned())
-    })?;
+    // A device that shows no text subtitles beside a file played as it is
+    // (AirPlay's) gets a stream when the cast shows some: its playlist
+    // names them.
+    let stream = !device.protocol.shows_subtitles(false) && shows_text_subtitles(state, user.id, &row, &cast).await?;
+    let base = base_url(state, device.address).ok_or_else(unreachable)?;
     let choosing = async {
         match device.protocol {
             Protocol::Cast => Ok(crate::cast::device::choose(state, &device).await),
@@ -120,8 +125,17 @@ pub async fn start(state: &AppState, user: &AuthUser, device: Found, mut cast: C
     // The session of Google's player that a try loaded into, on a Cast
     // device: the one to close should the cast not play.
     let launched = Mutex::new(None);
-    let attempt =
-        Attempt { state, user, device: &device, cast: &cast, base: &base, ours: &ours, deadline, launched: &launched };
+    let attempt = Attempt {
+        state,
+        user,
+        device: &device,
+        cast: &cast,
+        stream,
+        base: &base,
+        ours: &ours,
+        deadline,
+        launched: &launched,
+    };
     let played = match (attempt.play(&first).await, fallback) {
         (Err(Tried::Refused), Some(basic)) => {
             tracing::info!("a device refused its stream ({first}): it is sent the basic one");
@@ -203,6 +217,10 @@ struct Attempt<'a> {
     user: &'a AuthUser,
     device: &'a Found,
     cast: &'a Cast,
+    /// It asks for a stream, whose playlist names the subtitles shown: the
+    /// file plays as it is, without them, should none start
+    /// ([`start_session`]).
+    stream: bool,
     base: &'a str,
     /// Cancelled when a newer cast to the device takes this one's place.
     ours: &'a CancellationToken,
@@ -225,6 +243,7 @@ impl Attempt<'_> {
             "audio_index": cast.audio_index,
             "subtitle_index": cast.subtitle_index,
             "caps": caps,
+            "mode": if self.stream { "remux" } else { "auto" },
             // One cast at a time on a device: a new one ends the last, once
             // it plays.
             "client_id": device.key(),
@@ -384,6 +403,86 @@ impl Attempt<'_> {
     }
 }
 
+/// Whether `cast` shows text subtitles: those the remote picked, else those
+/// the user's choices pick for the title `row`, as its session starts with.
+async fn shows_text_subtitles(state: &AppState, user_id: i64, row: &ItemRow, cast: &Cast) -> ApiResult<bool> {
+    let files = crate::catalog::files_for_item(&state.db, row.id).await?;
+    // The file a session plays when none is named.
+    let Some(file) = files.first() else {
+        return Ok(false);
+    };
+    let streams = file.streams();
+    let index = match cast.subtitle_index {
+        Some(index) => Some(index),
+        None => crate::api::playback::subtitles_picked(state, user_id, row, &streams).await?,
+    };
+    // Text unless the file says otherwise, as the session's tracks are.
+    let text = |s: &MediaStream| s.kind == StreamKind::Subtitle && s.text_based != Some(false);
+    Ok(index.is_some_and(|index| streams.iter().any(|s| s.index == index && text(s))))
+}
+
+/// The devices on the server's network that a cast can send to Pley's web
+/// port ([`base_url`]), as [`super::NearbyDevices::listed`] finds them.
+/// None, without a look, while no device can reach Pley ([`reaches_pley`]).
+/// The log says once that devices were left out.
+pub async fn reachable(state: &AppState) -> Vec<Found> {
+    let fixed = state.config.cast_fixed.found();
+    let discovery = state.network.wanted().discovery;
+    if !reaches_pley(state) {
+        // Turned off, discovery forgets what it found all the same; and
+        // the log says nothing of devices Pley wouldn't look for anyway.
+        state.nearby.forget_while_off(fixed.as_ref(), discovery);
+        if discovery || fixed.is_some() {
+            say_unreachable(state);
+        }
+        return Vec::new();
+    }
+    let found = state.nearby.listed(fixed, discovery).await;
+    let all = found.len();
+    let reachable: Vec<Found> = found.into_iter().filter(|d| base_url(state, d.address).is_some()).collect();
+    if reachable.len() < all {
+        say_unreachable(state);
+    }
+    reachable
+}
+
+fn say_unreachable(state: &AppState) {
+    if !state.nearby.said_unreachable.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            "Google Cast and AirPlay devices that can't reach Pley's web port aren't offered in Play on…: Pley \
+             listens on no address of their network (Settings → Network)"
+        );
+    }
+}
+
+/// Whether a device on the network may reach Pley's web port at all: Pley
+/// listens beyond this computer, or was told where the device reaches it.
+/// Not while it listens on this computer alone (behind a reverse proxy
+/// there), where a cast to any device would only fail: Pley doesn't look
+/// for them then, to list them, cast or pair.
+pub fn reaches_pley(state: &AppState) -> bool {
+    state.config.cast_fixed.server.is_some() || listens_on_network(&state.network.listeners())
+}
+
+/// The answer to a cast to a device that can't reach Pley's web port.
+pub fn unreachable() -> AppError {
+    AppError::ConflictAs("cast_unreachable", "Pley doesn't listen on an address the device can reach".to_owned())
+}
+
+/// Whether Pley's web port listens beyond this computer: on every address,
+/// or on one of a network.
+fn listens_on_network(listeners: &[Listener]) -> bool {
+    listeners.iter().any(|l| l.kind == Kind::Web && l.error.is_none() && !l.address.ip().is_loopback())
+}
+
+/// The web port's listener a device reaches when this computer's address on
+/// the way to it is `ip`.
+fn web_listener(listeners: &[Listener], ip: IpAddr) -> Option<&Listener> {
+    listeners
+        .iter()
+        .find(|l| l.kind == Kind::Web && l.error.is_none() && (l.address.ip().is_unspecified() || l.address.ip() == ip))
+}
+
 /// Where the device reaches Pley's web port: the address of this computer
 /// on the way to it.
 fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
@@ -394,17 +493,19 @@ fn base_url(state: &AppState, device: SocketAddr) -> Option<String> {
     local.connect(device).ok()?;
     let ip = local.local_addr().ok()?.ip();
     let listeners = state.network.listeners();
-    let web = listeners.iter().find(|l| {
-        l.kind == crate::network::Kind::Web
-            && l.error.is_none()
-            && (l.address.ip().is_unspecified() || l.address.ip() == ip)
-    })?;
+    let web = web_listener(&listeners, ip)?;
     Some(format!("http://{}", SocketAddr::new(ip, web.address.port())))
 }
 
 /// Starts the session of a cast to the device of `key`, as Pley's own
-/// players start one. Once the cast's attempt has `abandoned` it, the
-/// cast playing there is no longer ended to make room.
+/// players start one. A stream refused past the server's limit on streams
+/// is tried again once ending what the device plays makes room for it
+/// ([`end_cast_in_the_way`]); a refusal for any other reason leaves what
+/// plays there be. A stream asked for only for the subtitles (`Remux`)
+/// that doesn't start, for whatever reason, gives way to what Play would
+/// start, the file played as it is where the device plays it. Once the
+/// cast's attempt has `abandoned` it, nothing is ended to make room, nor
+/// started again.
 async fn start_session(
     state: AppState,
     user: AuthUser,
@@ -421,18 +522,76 @@ async fn start_session(
             Json(request),
         )
     };
-    match start(request.clone()).await {
-        // The server's limit on streams counts the cast playing there: it
-        // ends first, then, leaving the device to this one.
-        Err(AppError::Unavailable(_)) if !abandoned.is_cancelled() => {
-            if let Some((_, before)) = state.nearby.playing.lock().get(&key) {
-                before.cancel();
+    let started = match start(request.clone()).await {
+        // Past the server's limit on streams, what plays there leaves the
+        // device to this cast when that makes room for it.
+        Err(AppError::StreamsFull(pool, message)) if !abandoned.is_cancelled() => {
+            match end_cast_in_the_way(&state, &key, pool) {
+                Room::Lacking => Err(AppError::StreamsFull(pool, message)),
+                Room::Free => start(request.clone()).await,
+                Room::Made => {
+                    request.keep_previous = false;
+                    start(request.clone()).await
+                }
             }
-            request.keep_previous = false;
+        }
+        started => started,
+    };
+    match started {
+        // A stream asked for only so that the device shows the subtitles
+        // (AirPlay's), which the server didn't make, whatever went wrong:
+        // the file plays as it is, without them, as it did before such a
+        // cast asked for a stream, rather than nothing. What would keep the
+        // file from playing too (an item gone) fails it again.
+        Err(err) if request.mode == PlaybackMode::Remux && !abandoned.is_cancelled() => {
+            tracing::info!("a cast's subtitles need a stream the server couldn't make ({err}): it plays without them");
+            request.mode = PlaybackMode::Auto;
             start(request).await
         }
         started => started,
     }
+}
+
+/// The room [`end_cast_in_the_way`] found for a cast's stream.
+enum Room {
+    /// Not enough, even with what the device plays ended: it plays on.
+    Lacking,
+    /// A slot freed meanwhile: nothing needed to end.
+    Free,
+    /// What the device played ended to make it.
+    Made,
+}
+
+/// Makes room for a cast to the device of `key` whose stream, needing a
+/// slot of `pool`, was refused past the server's limit on streams. What the
+/// device plays ends only when the stream fits once it has, and not while
+/// it plays, counted as the limit counts (the streams whose player was
+/// heard from lately, and the play requests still creating their job): at
+/// once, so that the next try finds the slot free, and its follower leaves
+/// the device to the cast that replaces it. It plays on when ending it
+/// would free nothing the stream can take: a file played as it is, a copy
+/// while a video transcode is refused, a stream gone quiet, a limit lowered
+/// under the streams playing.
+fn end_cast_in_the_way(state: &AppState, key: &str, pool: Pool) -> Room {
+    let settings = state.settings.get();
+    let total = settings.max_transcodes as usize;
+    let video = settings.max_video_transcodes.min(settings.max_transcodes) as usize;
+    // The device's own sessions: the server names the device of a cast.
+    let theirs: Vec<_> = state.sessions.list().into_iter().filter(|s| s.device_id == key).collect();
+    let ids: Vec<&str> = theirs.iter().map(|s| s.id.as_str()).collect();
+    if state.sessions.full_without(pool, total, video, &ids).is_some() {
+        return Room::Lacking;
+    }
+    if state.sessions.full(pool, total, video).is_none() {
+        return Room::Free;
+    }
+    if let Some((_, before)) = state.nearby.playing.lock().get(key) {
+        before.cancel();
+    }
+    for id in ids {
+        end_session(state, id);
+    }
+    Room::Made
 }
 
 /// The answer to a cast that didn't play within its time to start.
@@ -640,5 +799,178 @@ async fn record(
             }
         }
         Err(err) => tracing::warn!("couldn't keep a cast's place: {err}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listener(kind: Kind, address: &str, error: Option<&str>) -> Listener {
+        Listener { kind, address: address.parse().unwrap(), error: error.map(str::to_owned) }
+    }
+
+    #[test]
+    fn a_device_reaches_the_web_port_where_it_listens_on_the_way_to_it() {
+        let ip: IpAddr = "192.168.1.10".parse().unwrap();
+        let on = |listeners: &[Listener]| web_listener(listeners, ip).map(|l| l.address.to_string());
+        // On every address, or on this one.
+        assert_eq!(on(&[listener(Kind::Web, "0.0.0.0:7539", None)]), Some("0.0.0.0:7539".into()));
+        assert_eq!(on(&[listener(Kind::Web, "192.168.1.10:7539", None)]), Some("192.168.1.10:7539".into()));
+        // Not on another address, nor this computer alone, nor where it
+        // couldn't listen, nor another API's port.
+        assert_eq!(on(&[listener(Kind::Web, "10.0.0.5:7539", None)]), None);
+        assert_eq!(on(&[listener(Kind::Web, "127.0.0.1:7539", None)]), None);
+        assert_eq!(on(&[listener(Kind::Web, "0.0.0.0:7539", Some("in use"))]), None);
+        assert_eq!(on(&[listener(Kind::Jellyfin, "0.0.0.0:8096", None)]), None);
+    }
+
+    #[test]
+    fn behind_a_proxy_on_this_computer_pley_listens_on_no_network() {
+        assert!(!listens_on_network(&[]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "127.0.0.1:7539", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "[::1]:7539", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Plex, "0.0.0.0:32400", None)]));
+        assert!(!listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", Some("in use"))]));
+        assert!(listens_on_network(&[listener(Kind::Web, "0.0.0.0:7539", None)]));
+        assert!(listens_on_network(&[listener(Kind::Web, "192.168.1.10:7539", None)]));
+    }
+
+    /// A server without a transcoder, as `adjust` configures it.
+    async fn server(adjust: impl FnOnce(&mut crate::config::Config)) -> AppState {
+        let dir = crate::testing::tempdir();
+        let mut config = crate::config::Config::for_data_dir(dir.path());
+        config.transcoder_path = Some(dir.path().join("no-transcoder-in-tests"));
+        adjust(&mut config);
+        AppState::init(config).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn behind_a_proxy_pley_still_forgets_the_devices_found_once_discovery_is_off() {
+        let tv = Found {
+            id: "tv".into(),
+            name: "Living room TV".into(),
+            model: None,
+            address: "192.0.2.20:8009".parse().unwrap(),
+            video: true,
+            protocol: Protocol::Cast,
+        };
+        // Pley listens on no network: a test listens nowhere at all.
+        for discovery in [true, false] {
+            let state = server(|config| config.discovery = discovery).await;
+            assert!(!reaches_pley(&state));
+            state.nearby.found.lock().insert(tv.key(), (tv.clone(), Instant::now()));
+            assert!(reachable(&state).await.is_empty(), "none listed");
+            // Turned off, discovery forgets them, and the log says devices
+            // were left out only where Pley would look for them.
+            assert_eq!(state.nearby.found.lock().is_empty(), !discovery, "discovery {discovery}");
+            assert_eq!(state.nearby.said_unreachable.load(Ordering::Relaxed), discovery, "discovery {discovery}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stream_asked_for_the_subtitles_falls_back_to_the_file_whatever_failed() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicU16;
+
+        use axum::routing::{get, post};
+        // A transcoder that answers every job with the status it is given.
+        let failing = Arc::new(AtomicU16::new(500));
+        let status = failing.clone();
+        let answer = move || {
+            let status = status.load(Ordering::SeqCst);
+            async move { axum::http::StatusCode::from_u16(status).unwrap() }
+        };
+        let info = pley_transcoder_api::TranscoderInfo {
+            name: "pley-transcoder".into(),
+            version: "9.9.9".into(),
+            api_version: pley_transcoder_api::API_VERSION,
+            ..Default::default()
+        };
+        let transcoder = axum::Router::new()
+            .route("/v1/info", get(move || async move { Json(info) }))
+            .route("/v1/jobs", post(answer));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, transcoder).await.unwrap() });
+        let state = server(|config| {
+            config.transcoder_url = Some(format!("http://{address}"));
+            config.transcoder_token = Some("secret".into());
+        })
+        .await;
+        state.transcoder.start();
+        assert!(state.transcoder.wait_ready(Duration::from_secs(10)).await);
+        // A film in H.264 and AAC in MP4, which an AirPlay device plays as
+        // it is, with English text subtitles.
+        let media = serde_json::json!({
+            "container": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration_ms": 7_200_000,
+            "streams": [
+                {"index": 0, "kind": "video", "codec": "h264", "width": 1920, "height": 1080, "pix_fmt": "yuv420p"},
+                {"index": 1, "kind": "audio", "codec": "aac", "channels": 2, "language": "eng", "default": true},
+                {"index": 2, "kind": "subtitle", "codec": "mov_text", "language": "eng", "text_based": true},
+            ],
+        });
+        for sql in [
+            "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (1, 'sam', '', 1, 0)",
+            // Scanned just now: the library watcher's periodic rescan, which
+            // starts with the server, leaves it be. A scan of a library
+            // without folders would take the film away under the test.
+            "INSERT INTO libraries (id, name, kind, paths, created_at, scanned_at)
+             VALUES (1, 'Movies', 'movies', '[]', 0, CAST(strftime('%s', 'now') AS INTEGER))",
+            "INSERT INTO items (id, library_id, kind, key, title, sort_title, added_at, updated_at)
+             VALUES (1, 1, 'movie', 'm', 'Film', 'film', 0, 0)",
+        ] {
+            sqlx::query(sql).execute(&state.db.write).await.unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO media_files (id, item_id, library_id, path, size, mtime, container, video_codec,
+             audio_codec, duration_ms, media_info, added_at, updated_at)
+             VALUES (1, 1, 1, '/films/film.mp4', 1, 0, 'mp4', 'h264', 'aac', 7200000, ?, 0, 0)",
+        )
+        .bind(media.to_string())
+        .execute(&state.db.write)
+        .await
+        .unwrap();
+        let user = AuthUser {
+            id: 1,
+            username: "sam".into(),
+            is_admin: true,
+            account_admin: true,
+            all_libraries: true,
+            max_age: None,
+            app: None,
+            compatibility: None,
+        };
+        let tv = Found {
+            id: "a1b2c3d4e5f6".into(),
+            name: "TV".into(),
+            model: None,
+            address: "192.0.2.20:7000".parse().unwrap(),
+            video: true,
+            protocol: Protocol::AirPlay,
+        };
+        // The stream the cast asks for, so that the device shows them.
+        let request: PlaybackRequest = serde_json::from_value(serde_json::json!({
+            "item_id": 1,
+            "subtitle_index": 2,
+            "caps": crate::airplay::device::choose(&tv).caps,
+            "mode": "remux",
+            "client_id": tv.key(),
+            "keep_previous": true,
+            "keyed_urls": true,
+        }))
+        .unwrap();
+        let request = PlaybackRequest { device_id: Some(tv.key()), ..request };
+        // The transcoder fails, refuses the job, or can't take it now: the
+        // file plays as it is, as it did before such casts asked for a
+        // stream.
+        for status in [500, 400, 503] {
+            failing.store(status, Ordering::SeqCst);
+            let started =
+                start_session(state.clone(), user.clone(), request.clone(), tv.key(), CancellationToken::new()).await;
+            let Json(info) = started.unwrap_or_else(|err| panic!("{status}: {err:?}"));
+            assert_eq!(info.method, Method::Direct, "{status}");
+        }
     }
 }

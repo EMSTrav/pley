@@ -12,7 +12,7 @@ pub mod player;
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -130,6 +130,9 @@ pub struct NearbyDevices {
     /// the one that stays.
     starting: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     casts: AtomicU64,
+    /// Whether the log said that devices were left out of the lists, as
+    /// none reaches Pley's web port ([`casts::reachable`]).
+    said_unreachable: AtomicBool,
     /// The models that refused their stream: they get the basic one,
     /// until the server restarts.
     refused: Mutex<HashSet<String>>,
@@ -145,11 +148,7 @@ impl NearbyDevices {
     /// (Settings → Network); turned off, the devices found are forgotten.
     /// `fixed` is the device the server was told of, which is always listed.
     pub async fn listed(&self, fixed: Option<Found>, discovery: bool) -> Vec<Found> {
-        if !discovery {
-            let fixed = fixed.as_ref().map(Found::key);
-            self.found.lock().retain(|key, _| Some(key) == fixed.as_ref());
-            *self.looked.lock() = None;
-        }
+        self.forget_while_off(fixed.as_ref(), discovery);
         if (discovery || fixed.is_some()) && self.looked.lock().is_none_or(|at| at.elapsed() >= LOOK_AGAIN) {
             let _one = self.looking.lock().await;
             // Another request looked while this one waited.
@@ -160,6 +159,17 @@ impl NearbyDevices {
         let mut found = self.found.lock();
         found.retain(|_, (_, at)| at.elapsed() < KEEP_FOR);
         found.values().map(|(device, _)| device.clone()).filter(|d| d.video).collect()
+    }
+
+    /// Forgets the devices found, but `fixed`, while `discovery` is off:
+    /// Pley keeps none it may not look for.
+    fn forget_while_off(&self, fixed: Option<&Found>, discovery: bool) {
+        if discovery {
+            return;
+        }
+        let fixed = fixed.map(Found::key);
+        self.found.lock().retain(|key, _| Some(key) == fixed.as_ref());
+        *self.looked.lock() = None;
     }
 
     async fn look(&self, fixed: Option<Found>) {
@@ -189,11 +199,24 @@ impl NearbyDevices {
     }
 
     /// The device of `key` ([`Found::key`]) seen lately, while `discovery`
-    /// is on, as [`Self::listed`] lists it.
-    pub fn device(&self, key: &str, fixed: Option<Found>, discovery: bool) -> Option<Found> {
-        if !discovery && fixed.is_none_or(|f| f.key() != key) {
+    /// is on, as [`Self::listed`] lists it. One that isn't is looked for
+    /// again, as a listing would, before it is taken to be gone: a remote
+    /// may cast from a list older than the devices are kept, or while a
+    /// look is under way. A key that names neither protocol is no device's,
+    /// and isn't looked for.
+    pub async fn device(&self, key: &str, fixed: Option<Found>, discovery: bool) -> Option<Found> {
+        if Protocol::of(key).is_none() || (!discovery && fixed.as_ref().is_none_or(|f| f.key() != key)) {
             return None;
         }
+        if let Some(device) = self.seen(key) {
+            return Some(device);
+        }
+        self.listed(fixed, discovery).await;
+        self.seen(key)
+    }
+
+    /// The device of `key`, when a look saw it lately.
+    fn seen(&self, key: &str) -> Option<Found> {
         let found = self.found.lock();
         found.get(key).filter(|(d, at)| d.video && at.elapsed() < KEEP_FOR).map(|(d, _)| d.clone())
     }
@@ -244,10 +267,72 @@ mod tests {
         };
         devices.found.lock().insert(tv.key(), (tv.clone(), Instant::now()));
         *devices.looked.lock() = Some(Instant::now());
-        assert_eq!(devices.device("cast:tv", None, true), Some(tv.clone()));
-        assert_eq!(devices.device("cast:tv", None, false), None, "nor cast to");
+        assert_eq!(devices.device("cast:tv", None, true).await, Some(tv.clone()));
+        assert_eq!(devices.device("cast:tv", None, false).await, None, "nor cast to");
         assert!(devices.listed(None, false).await.is_empty());
-        assert_eq!(devices.device("cast:tv", None, true), None, "forgotten");
+        assert!(devices.found.lock().is_empty(), "forgotten");
+    }
+
+    #[tokio::test]
+    async fn a_device_not_seen_lately_is_looked_for_again() {
+        let devices = NearbyDevices::default();
+        let tv = Found {
+            id: "tv".into(),
+            name: "Living room TV".into(),
+            model: None,
+            address: "192.0.2.20:8009".parse().unwrap(),
+            video: true,
+            protocol: Protocol::Cast,
+        };
+        let other = Found { id: "other".into(), address: "192.0.2.21:8009".parse().unwrap(), ..tv.clone() };
+        // Seen by a look longer ago than devices are kept: a computer
+        // started less long ago has no such time.
+        let Some(long_ago) = Instant::now().checked_sub(KEEP_FOR + Duration::from_secs(1)) else {
+            return;
+        };
+        for device in [&tv, &other] {
+            devices.found.lock().insert(device.key(), (device.clone(), long_ago));
+        }
+        *devices.looked.lock() = Some(long_ago);
+        // The next look finds the TV (the device the server was told of, so
+        // that it doesn't go out on the network), and not the other one,
+        // which is gone.
+        assert_eq!(devices.device("cast:tv", Some(tv.clone()), true).await, Some(tv.clone()));
+        assert_eq!(devices.device("cast:other", Some(tv.clone()), true).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_device_never_seen_is_looked_for() {
+        let devices = NearbyDevices::default();
+        let tv = Found {
+            id: "tv".into(),
+            name: "Living room TV".into(),
+            model: None,
+            address: "192.0.2.20:8009".parse().unwrap(),
+            video: true,
+            protocol: Protocol::Cast,
+        };
+        // No look yet: the first finds it (the device the server was told
+        // of, so that it doesn't go out on the network).
+        assert_eq!(devices.device("cast:tv", Some(tv.clone()), true).await, Some(tv.clone()));
+        assert!(devices.looked.lock().is_some(), "it looked");
+    }
+
+    #[tokio::test]
+    async fn an_id_of_no_device_s_kind_makes_no_look() {
+        let devices = NearbyDevices::default();
+        let tv = Found {
+            id: "tv".into(),
+            name: "Living room TV".into(),
+            model: None,
+            address: "192.0.2.20:8009".parse().unwrap(),
+            video: true,
+            protocol: Protocol::Cast,
+        };
+        for id in ["app-3", "tv", ""] {
+            assert_eq!(devices.device(id, Some(tv.clone()), true).await, None, "{id}");
+        }
+        assert!(devices.looked.lock().is_none(), "no look");
     }
 
     #[test]

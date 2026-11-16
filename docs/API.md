@@ -3971,10 +3971,17 @@ would.
   `["item"]` and `protocol: "cast"`, which remotes show under the name.
   The server finds them by mDNS (`_googlecast._tcp`) on its own network,
   when the list is asked for and the last look is over 30 seconds old,
-  and keeps one that stops answering for 5 minutes. It doesn't look
+  and keeps one that stops answering for 5 minutes; a cast to, or a
+  pairing with, one it doesn't keep (from a list older than that) looks
+  again first, as the list would. It doesn't look
   while discovery is off (Settings → Network, `--no-discovery`), and then
   lists none, nor from a Docker bridge network, which the announcements
-  don't reach. A Cast device at the address of a receiver
+  don't reach. It lists them only while its web port listens on an
+  address they reach, which a cast hands them: while Pley listens on its
+  own computer alone (behind a reverse proxy there) it lists none and
+  doesn't look, for a cast or a pairing either, and the log says so once
+  while discovery is on.
+  A Cast device at the address of a receiver
   in the same list that takes `item` is left out: it is the same TV, and
   the Pley app stands for it. One whose Pley app is on a profile the
   caller can't cast to stays listed. A cast there names a movie or an episode,
@@ -3985,7 +3992,8 @@ would.
   playing within 3 minutes is stopped and answers `cast_failed`, so a
   client (and a reverse proxy before Pley) waits longer than that, 4
   minutes say, for the answer;
-  `404` for a device not listed lately, a caller
+  `404` for a device the server doesn't find (one it no longer keeps is
+  looked for again first, as above), a caller
   who isn't a home member, an app other than Pley's own, another
   profile's `profile_id`, a `device_id`
   or an item the caller can't see; `400` for a `start_ms` out of range or
@@ -3993,7 +4001,9 @@ would.
   anything but a movie or an episode, `409` `{ code:
   "cast_failed" }` when the device didn't play it, and `409` `{ code:
   "cast_unreachable" }` when Pley doesn't listen on an address the device
-  can reach. The server plays it on the device itself: it starts a
+  can reach (at once, for a home member's cast to any device, while Pley
+  listens on its own computer alone). The server plays it on the device
+  itself: it starts a
   session of the caller's as a player would, with keyed addresses, which it
   gives to Google's own player on the device. What the stream carries goes
   by the device's model, as Cast devices don't say what they decode: every
@@ -4015,8 +4025,13 @@ would.
   are passed on once it plays. The session ends when the device stops or
   finishes it, when another app takes the device over, or when it is
   stopped in Pley, which stops the device too. A new cast to the device
-  ends the one before once it plays: one that fails leaves it playing
-  (unless the server's limit on streams counted it, which ends it first).
+  ends the one before once it plays: one that fails leaves it playing.
+  Only a cast the server's limits on streams refused ends it first, and
+  starts again, when the new stream fits with it ended but not with it
+  playing, counted as the limits count (streams whose player was heard
+  from in the last 90 seconds, and plays still starting): a file played
+  as it is holds no stream, and a copy no video transcode. A refusal for
+  any other reason (the transcoder not running) leaves it playing.
 - **AirPlay devices.** Apple TVs and TVs with AirPlay 2 built in are
   listed the same way, with `receiver_id` and `device_id`
   `airplay:<its id>` and `protocol: "airplay"`. The server finds them by
@@ -4036,9 +4051,10 @@ would.
   /api/network/airplay/{device_id}`) or the device is unpaired or reset
   (its next cast then answers `409` `pairing_needed`, and the new pairing
   replaces the old). A device open to everyone on its network needs no PIN.
-  The pairing route answers `404` as a cast does, `409` `{ code:
-  "not_pairable" }` for a device that isn't AirPlay, `400` for a PIN
-  that isn't 4 digits, `403` `{ code: "wrong_pin" }` for a wrong one
+  The pairing route answers `404` as a cast does (and for any device
+  while Pley listens on its own computer alone, where no cast plays),
+  `409` `{ code: "not_pairable" }` for a device that isn't AirPlay, `400`
+  for a PIN that isn't 4 digits, `403` `{ code: "wrong_pin" }` for a wrong one
   (counted as a profile PIN's: `429` after 5 in 15 minutes), `429` when
   the device takes no other try yet or was asked for a PIN in the last
   3 seconds (each ask shows a new one), and `409` `{ code:
@@ -4049,8 +4065,13 @@ would.
   H.264 up to 1080p with stereo AAC, in HLS of MPEG-TS. An AirPlay player
   shows only subtitles its stream's playlist names: picture subtitles are
   burned in, and a text track goes in the playlist (the keyed
-  `subtitled-{index}.m3u8`) when the title plays as a stream. One played
-  as its file is shows none, and the session says so. The
+  `subtitled-{index}.m3u8`). A cast that shows a text track (the one
+  picked, else the one the caster's choices pick) is therefore a stream,
+  copied as it is where it can be. When the server doesn't make one,
+  whatever the reason (its transcoder isn't running or fails, its limit
+  on streams is reached, or video transcoding is off and the video can't
+  be copied), the file plays as it is, without them, and the session says
+  so. The
   session has the controls `play`, `pause`, `seek` and `skip`; the
   device keeps its volume to itself. It ends as a Cast device's does.
 

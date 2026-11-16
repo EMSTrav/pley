@@ -1043,8 +1043,13 @@ async fn lists_nearby(app: &TestApp, token: &str) -> bool {
 /// can see.
 #[tokio::test]
 async fn only_home_members_through_pleys_own_apps_reach_the_devices_on_the_network() {
-    // A Cast device the server was told of; nothing below connects to it.
-    let app = TestApp::with_config(|config| config.cast_fixed.device = Some("127.0.0.1:9".parse().unwrap())).await;
+    // A Cast device the server was told of, and where it reaches Pley;
+    // nothing below connects to it.
+    let app = TestApp::with_config(|config| {
+        config.cast_fixed.device = Some("127.0.0.1:9".parse().unwrap());
+        config.cast_fixed.server = Some("http://pley.test:7539".into());
+    })
+    .await;
     let admin = app.setup_admin().await;
     app.media_file("movies/Film (2020).mkv", 2048);
     let movies = app.library(&admin, "Movies", "movies", "movies").await;

@@ -126,13 +126,14 @@ fn unwanted_conversion(req: &PlaybackRequest, decision: &Decision, info: Option<
     })
 }
 
-/// What a play gets past a limit on streams (Settings → Transcoder).
-fn too_many_streams(full: Full, total: u32, video: u32) -> AppError {
+/// What a play gets past a limit on streams (Settings → Transcoder), its
+/// stream needing a slot of `pool`.
+fn too_many_streams(pool: Pool, full: Full, total: u32, video: u32) -> AppError {
     let (max, made) = match full {
         Full::Total => (total, "transcodes"),
         Full::Video => (video, "video transcodes"),
     };
-    AppError::Unavailable(format!("the server is already running its maximum of {max} {made}"))
+    AppError::StreamsFull(pool, format!("the server is already running its maximum of {max} {made}"))
 }
 
 /// The subtitles a play starts with, as the user's remotes show them until
@@ -152,9 +153,20 @@ async fn subtitles_shown(
     if !streams.iter().any(|s| s.kind == StreamKind::Subtitle) {
         return Ok(None);
     }
+    Ok(Some(subtitles_picked(state, user_id, row, streams).await?.unwrap_or(-1)))
+}
+
+/// The subtitles of `streams` that the user's choices pick for `row`
+/// (players start with them), `None` for none.
+pub(crate) async fn subtitles_picked(
+    state: &AppState,
+    user_id: i64,
+    row: &ItemRow,
+    streams: &[MediaStream],
+) -> ApiResult<Option<i64>> {
     let pref = streams::load(&state.db, user_id, streams::scope(row)).await?;
     let defaults = streams::defaults(&state.db, user_id).await?;
-    Ok(Some(streams::resolve(pref.as_ref(), &defaults, streams, None).subtitle.unwrap_or(-1)))
+    Ok(streams::resolve(pref.as_ref(), &defaults, streams, None).subtitle)
 }
 
 pub async fn start(
@@ -210,11 +222,7 @@ pub async fn start(
     let picture = if decision.method != Method::Direct && may_draw_pictures(&streams, &req.caps) {
         let chosen = match req.subtitle_index {
             Some(_) => None,
-            None => {
-                let pref = streams::load(&state.db, user.id, streams::scope(&row)).await?;
-                let defaults = streams::defaults(&state.db, user.id).await?;
-                streams::resolve(pref.as_ref(), &defaults, &streams, None).subtitle
-            }
+            None => subtitles_picked(&state, user.id, &row, &streams).await?,
         };
         picture_to_prepare(&streams, &req, &decision, chosen)
     } else {
@@ -314,7 +322,7 @@ pub async fn start(
     let mut slot = state
         .sessions
         .reserve_transcode(pool, total as usize, video as usize)
-        .map_err(|full| too_many_streams(full, total, video))?;
+        .map_err(|full| too_many_streams(pool, full, total, video))?;
     let job_request = JobRequest {
         input: file.path.clone(),
         media: info,
@@ -348,7 +356,7 @@ pub async fn start(
                 .sessions
                 .transcodes_video(&mut slot, video as usize)
                 .err()
-                .map(|full| too_many_streams(full, total, video))
+                .map(|full| too_many_streams(Pool::Video, full, total, video))
         };
         if let Some(refused) = refused {
             let _ = state.transcoder.delete_job(&created.id).await;
