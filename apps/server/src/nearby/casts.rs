@@ -24,7 +24,7 @@ use crate::catalog::ItemRow;
 use crate::error::{ApiResult, AppError};
 use crate::events::ServerEvent;
 use crate::network::{Kind, Listener};
-use crate::playback::{Control, Method, PlaybackRequest};
+use crate::playback::{Control, Method, PlaybackRequest, Pool, Session};
 use crate::state::AppState;
 
 /// How often the device is asked where it is, and its place kept.
@@ -498,17 +498,50 @@ async fn start_session(
         )
     };
     match start(request.clone()).await {
-        // The server's limit on streams counts the cast playing there: it
-        // ends first, then, leaving the device to this one.
-        Err(AppError::Unavailable(_)) if !abandoned.is_cancelled() => {
-            if let Some((_, before)) = state.nearby.playing.lock().get(&key) {
-                before.cancel();
+        // The server's limit on streams may be full with the cast playing
+        // there: it ends first, then, leaving the device to this one.
+        Err(AppError::Unavailable(message)) if !abandoned.is_cancelled() => {
+            if end_cast_in_the_way(&state, &key) {
+                request.keep_previous = false;
+                start(request).await
+            } else {
+                Err(AppError::Unavailable(message))
             }
-            request.keep_previous = false;
-            start(request).await
         }
         started => started,
     }
+}
+
+/// Ends the cast playing on the device of `key` when the server's limit on
+/// streams is full and its session holds a slot that a new stream may take:
+/// one of all of them, or one of the video transcodes when only those are
+/// full. At once, so that the next session finds the slot free; its
+/// follower leaves the device to the cast that replaces it. Whether it did.
+/// A cast played as its file is holds no slot, and plays on, as any does
+/// when the server refused for another reason (no transcoder running).
+fn end_cast_in_the_way(state: &AppState, key: &str) -> bool {
+    let settings = state.settings.get();
+    let total = settings.max_transcodes as usize;
+    let video = settings.max_video_transcodes.min(settings.max_transcodes) as usize;
+    let all_full = state.sessions.full(Pool::Light, total, video).is_some();
+    let video_full = state.sessions.full(Pool::Video, total, video).is_some();
+    // The device's own sessions: the server names the device of a cast.
+    let theirs: Vec<_> = state.sessions.list().into_iter().filter(|s| s.device_id == key).collect();
+    let frees = |s: &Session| {
+        s.transcode
+            .as_ref()
+            .is_some_and(|spec| all_full || (video_full && Pool::of(spec.request.video.as_ref()) == Pool::Video))
+    };
+    if !theirs.iter().any(|s| frees(s)) {
+        return false;
+    }
+    if let Some((_, before)) = state.nearby.playing.lock().get(key) {
+        before.cancel();
+    }
+    for session in theirs {
+        end_session(state, &session.id);
+    }
+    true
 }
 
 /// The answer to a cast that didn't play within its time to start.

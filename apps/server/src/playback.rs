@@ -2396,15 +2396,28 @@ impl Sessions {
     /// starts ([`Sessions::transcodes_video`]).
     pub fn reserve_transcode(&self, pool: Pool, total: usize, video: usize) -> Result<TranscodeSlot<'_>, Full> {
         let map = self.map.lock();
-        let reserved = |pool: Pool| self.reserved[pool as usize].load(Ordering::SeqCst);
-        if live_transcodes(&map, None) + reserved(Pool::Video) + reserved(Pool::Light) >= total {
-            return Err(Full::Total);
-        }
-        if pool == Pool::Video && live_transcodes(&map, Some(Pool::Video)) + reserved(Pool::Video) >= video {
-            return Err(Full::Video);
+        if let Some(full) = self.full_in(&map, pool, total, video) {
+            return Err(full);
         }
         self.reserved[pool as usize].fetch_add(1, Ordering::SeqCst);
         Ok(TranscodeSlot { sessions: self, pool })
+    }
+
+    /// The limit a stream of `pool` is past now, as
+    /// [`Sessions::reserve_transcode`] would answer, without taking a slot.
+    pub fn full(&self, pool: Pool, total: usize, video: usize) -> Option<Full> {
+        self.full_in(&self.map.lock(), pool, total, video)
+    }
+
+    fn full_in(&self, map: &HashMap<String, Arc<Session>>, pool: Pool, total: usize, video: usize) -> Option<Full> {
+        let reserved = |pool: Pool| self.reserved[pool as usize].load(Ordering::SeqCst);
+        if live_transcodes(map, None) + reserved(Pool::Video) + reserved(Pool::Light) >= total {
+            return Some(Full::Total);
+        }
+        if pool == Pool::Video && live_transcodes(map, Some(Pool::Video)) + reserved(Pool::Video) >= video {
+            return Some(Full::Video);
+        }
+        None
     }
 
     /// The stream `slot` was taken for transcodes its video after all (a
