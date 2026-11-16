@@ -448,3 +448,23 @@ async fn series_from_the_tags_tools_write() {
     assert_eq!(series("Book Thirteen").await, (json!("Series Z"), json!(2.0)));
     assert_eq!(series("Book Fourteen").await, (Value::Null, Value::Null));
 }
+
+/// A file whose tags are crafted to be long is scanned as quickly as any
+/// other, and its book keeps only so much of them (SECURITY.md, "Untrusted
+/// media").
+#[tokio::test]
+async fn long_tags_are_cut() {
+    let (app, token) = tagged_app().await;
+    let authors: String = (0..200_000).map(|n| format!("Author {n}; ")).collect();
+    let tags = json!({"album": "t".repeat(100_000), "artist": authors, "description": "d".repeat(100_000)});
+    tagged(&app, "books/Author A/Book Fifteen.m4b", tags);
+    let started = std::time::Instant::now();
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+    assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+
+    let book = app.ids(lib, &token).await["t".repeat(500).as_str()];
+    let item = app.get(&format!("/api/items/{book}"), &token).await.body;
+    let authors = item["book"]["authors"].as_array().unwrap();
+    assert_eq!((authors.len(), &authors[49]), (50, &json!("Author 49")));
+    assert_eq!(item["summary"].as_str().map(str::len), Some(20_000));
+}

@@ -542,11 +542,33 @@ fn series_in_grouping(grouping: &str) -> Option<(String, Option<f64>)> {
     (!series.is_empty()).then(|| (series.to_owned(), c[2].parse().ok()))
 }
 
+// What an audiobook's tags say is bounded as an NFO file's is (SECURITY.md,
+// "Untrusted media"): a crafted file's tags cost a scan, which holds the
+// database's only writer, no more than a real file's.
+/// The characters of a tag that names are read from…
+const MAX_NAMES_TEXT: usize = 2_000;
+/// …the names read from it…
+const MAX_NAMES: usize = 50;
+/// …and the characters of a name, a title, a series or a genre.
+const MAX_TEXT: usize = 500;
+const MAX_SUMMARY: usize = 20_000;
+/// The highest place in a series.
+const MAX_SERIES_INDEX: f64 = 10_000.0;
+
+/// `value`'s first `max` characters.
+fn cut(value: &str, max: usize) -> &str {
+    value.char_indices().nth(max).map_or(value, |(end, _)| &value[..end])
+}
+
 /// Names in one tag: `Author A; Author B`, `A & B`, `A / B`.
 /// Commas stay, as in `Last, First`.
 fn names(value: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for name in value.split([';', '&', '/']).map(str::trim).filter(|n| !n.is_empty()) {
+    let names = cut(value, MAX_NAMES_TEXT).split([';', '&', '/']).map(|n| cut(n.trim(), MAX_TEXT).trim_end());
+    for name in names.filter(|n| !n.is_empty()) {
+        if out.len() == MAX_NAMES {
+            break;
+        }
         if !out.iter().any(|o| o.eq_ignore_ascii_case(name)) {
             out.push(name.to_owned());
         }
@@ -636,9 +658,12 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         folder = folder.parent().map(Path::to_path_buf).unwrap_or(folder);
     }
 
+    // A tag, cut to `max` characters.
+    let text = |keys: &[&str], max: usize| tag(tags, keys).map(|v| cut(v, max).trim_end().to_owned());
+
     let stem = file_stem(path);
     let m4b = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("m4b"));
-    let album = tag(tags, &["album"]).map(str::to_owned);
+    let album = text(&["album"], MAX_TEXT);
     let from_stem = book_folder(&stem);
 
     // `Author/Book.m4b`: the folder is the author's, unless it has the
@@ -679,8 +704,9 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         .map(names)
         .or_else(|| folder_narrator.map(|n| names(&n)))
         .unwrap_or_default();
-    let tagged_series = tag(tags, &["series", "movementname", "mvnm"]).map(str::to_owned);
-    let grouping = tag(tags, &["grouping"]).filter(|_| tagged_series.is_none()).and_then(series_in_grouping);
+    let tagged_series = text(&["series", "movementname", "mvnm"], MAX_TEXT);
+    let grouping =
+        text(&["grouping"], MAX_TEXT).filter(|_| tagged_series.is_none()).and_then(|g| series_in_grouping(&g));
     let series = tagged_series
         .or_else(|| grouping.as_ref().map(|(series, _)| series.clone()))
         .or_else(|| folder_series.map(|s| s.replace('_', " ").trim().to_owned()))
@@ -689,6 +715,7 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
     // `----:com.pilabor.tone:PART`, which FFmpeg reads as `part`.
     let series_index = tag(tags, &["series-part", "series_part", "seriespart", "movement", "mvin", "part"])
         .and_then(|v| v.trim().parse().ok())
+        .filter(|i: &f64| i.is_finite() && (0.0..=MAX_SERIES_INDEX).contains(i))
         .or(grouping.and_then(|(_, index)| index))
         .or(folder_index)
         .filter(|_| series.is_some());
@@ -704,9 +731,8 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         Some(c) => (c.get(1).and_then(|d| d.as_str().parse().ok()), c[2].parse().ok(), clean_title(&c[3])),
         None => (None, None, clean_title(&stem)),
     };
-    let part_title = tag(tags, &["title"])
-        .filter(|t| album.as_deref() != Some(*t))
-        .map(str::to_owned)
+    let part_title = text(&["title"], MAX_TEXT)
+        .filter(|t| album.as_ref() != Some(t))
         .unwrap_or(if file_title.is_empty() { stem.clone() } else { file_title });
 
     AudiobookName {
@@ -716,10 +742,10 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         series,
         series_index,
         year,
-        genre: tag(tags, &["genre"]).map(str::to_owned),
+        genre: text(&["genre"], MAX_TEXT),
         // A comment is often a ripper's or a shop's note: a summary only
         // when the file has no other.
-        summary: tag(tags, &["description", "synopsis"]).or_else(|| tag(tags, &["comment"])).map(str::to_owned),
+        summary: text(&["description", "synopsis"], MAX_SUMMARY).or_else(|| text(&["comment"], MAX_SUMMARY)),
         book_key,
         book_dir,
         part_title,
@@ -1122,6 +1148,49 @@ mod tests {
             &tags(&[("grouping", "Fantasy")]),
         );
         assert_eq!(b.series.as_deref(), Some("Series X"), "the folders still say");
+    }
+
+    /// A crafted file's tags are cut before they are read, at a
+    /// character's boundary, as an NFO file's are.
+    #[test]
+    fn audiobook_tags_are_bounded() {
+        let long = |c: &str| c.repeat(1_000_000);
+        // Names apart, each different: deduplicated one by one, these took
+        // minutes.
+        let many: String = (0..200_000).map(|n| format!("Author {n}; ")).collect();
+        let narrators = format!("{};Narrator B", long("n"));
+        let (album, title, series, genre, summary) = (long("é"), long("t"), long("s"), long("g"), long("d"));
+        let pairs = [
+            ("artist", many.as_str()),
+            ("composer", narrators.as_str()),
+            ("album", album.as_str()),
+            ("title", title.as_str()),
+            ("series", series.as_str()),
+            ("genre", genre.as_str()),
+            ("description", summary.as_str()),
+        ];
+        let started = std::time::Instant::now();
+        let b = parse_audiobook(Path::new("/books/Book/01.m4b"), Path::new("/books"), &tags(&pairs));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
+        assert_eq!(b.authors.len(), 50);
+        assert_eq!((b.authors[0].as_str(), b.authors[49].as_str()), ("Author 0", "Author 49"));
+        assert_eq!(b.narrators, ["n".repeat(500)], "names after the first 2,000 characters are left out");
+        assert_eq!(b.title, "é".repeat(500));
+        assert_eq!(b.part_title, "t".repeat(500));
+        assert_eq!(b.series.as_deref(), Some("s".repeat(500).as_str()));
+        assert_eq!(b.genre.as_deref(), Some("g".repeat(500).as_str()));
+        assert_eq!(b.summary.as_deref(), Some("d".repeat(20_000).as_str()));
+        assert!(b.book_key.len() < 2_000, "{}", b.book_key.len());
+
+        // A place in a series is a number from 0 to 10,000.
+        let index = |value: &str| {
+            let tags = tags(&[("series", "Series Y"), ("series-part", value)]);
+            parse_audiobook(Path::new("/books/Book/01.mp3"), Path::new("/books"), &tags).series_index
+        };
+        assert_eq!((index("0"), index("2.5"), index("10000")), (Some(0.0), Some(2.5), Some(10_000.0)));
+        for value in ["NaN", "inf", "-1", "10000.5", "1e308"] {
+            assert_eq!(index(value), None, "{value}");
+        }
     }
 
     #[test]
