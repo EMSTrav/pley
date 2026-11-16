@@ -427,11 +427,17 @@ async fn shows_text_subtitles(state: &AppState, user_id: i64, row: &ItemRow, cas
 /// The log says once that devices were left out.
 pub async fn reachable(state: &AppState) -> Vec<Found> {
     let fixed = state.config.cast_fixed.found();
+    let discovery = state.network.wanted().discovery;
     if !reaches_pley(state) {
-        say_unreachable(state);
+        // Turned off, discovery forgets what it found all the same; and
+        // the log says nothing of devices Pley wouldn't look for anyway.
+        state.nearby.forget_while_off(fixed.as_ref(), discovery);
+        if discovery || fixed.is_some() {
+            say_unreachable(state);
+        }
         return Vec::new();
     }
-    let found = state.nearby.listed(fixed, state.network.wanted().discovery).await;
+    let found = state.nearby.listed(fixed, discovery).await;
     let all = found.len();
     let reachable: Vec<Found> = found.into_iter().filter(|d| base_url(state, d.address).is_some()).collect();
     if reachable.len() < all {
@@ -830,6 +836,38 @@ mod tests {
         assert!(listens_on_network(&[listener(Kind::Web, "192.168.1.10:7539", None)]));
     }
 
+    /// A server without a transcoder, as `adjust` configures it.
+    async fn server(adjust: impl FnOnce(&mut crate::config::Config)) -> AppState {
+        let dir = crate::testing::tempdir();
+        let mut config = crate::config::Config::for_data_dir(dir.path());
+        config.transcoder_path = Some(dir.path().join("no-transcoder-in-tests"));
+        adjust(&mut config);
+        AppState::init(config).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn behind_a_proxy_pley_still_forgets_the_devices_found_once_discovery_is_off() {
+        let tv = Found {
+            id: "tv".into(),
+            name: "Living room TV".into(),
+            model: None,
+            address: "192.0.2.20:8009".parse().unwrap(),
+            video: true,
+            protocol: Protocol::Cast,
+        };
+        // Pley listens on no network: a test listens nowhere at all.
+        for discovery in [true, false] {
+            let state = server(|config| config.discovery = discovery).await;
+            assert!(!reaches_pley(&state));
+            state.nearby.found.lock().insert(tv.key(), (tv.clone(), Instant::now()));
+            assert!(reachable(&state).await.is_empty(), "none listed");
+            // Turned off, discovery forgets them, and the log says devices
+            // were left out only where Pley would look for them.
+            assert_eq!(state.nearby.found.lock().is_empty(), !discovery, "discovery {discovery}");
+            assert_eq!(state.nearby.said_unreachable.load(Ordering::Relaxed), discovery, "discovery {discovery}");
+        }
+    }
+
     #[tokio::test]
     async fn a_stream_asked_for_the_subtitles_falls_back_to_the_file_whatever_failed() {
         use std::sync::Arc;
@@ -855,11 +893,11 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, transcoder).await.unwrap() });
-        let dir = crate::testing::tempdir();
-        let mut config = crate::config::Config::for_data_dir(dir.path());
-        config.transcoder_url = Some(format!("http://{address}"));
-        config.transcoder_token = Some("secret".into());
-        let state = AppState::init(config).await.unwrap();
+        let state = server(|config| {
+            config.transcoder_url = Some(format!("http://{address}"));
+            config.transcoder_token = Some("secret".into());
+        })
+        .await;
         state.transcoder.start();
         assert!(state.transcoder.wait_ready(Duration::from_secs(10)).await);
         // A film in H.264 and AAC in MP4, which an AirPlay device plays as

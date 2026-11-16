@@ -148,11 +148,7 @@ impl NearbyDevices {
     /// (Settings → Network); turned off, the devices found are forgotten.
     /// `fixed` is the device the server was told of, which is always listed.
     pub async fn listed(&self, fixed: Option<Found>, discovery: bool) -> Vec<Found> {
-        if !discovery {
-            let fixed = fixed.as_ref().map(Found::key);
-            self.found.lock().retain(|key, _| Some(key) == fixed.as_ref());
-            *self.looked.lock() = None;
-        }
+        self.forget_while_off(fixed.as_ref(), discovery);
         if (discovery || fixed.is_some()) && self.looked.lock().is_none_or(|at| at.elapsed() >= LOOK_AGAIN) {
             let _one = self.looking.lock().await;
             // Another request looked while this one waited.
@@ -163,6 +159,17 @@ impl NearbyDevices {
         let mut found = self.found.lock();
         found.retain(|_, (_, at)| at.elapsed() < KEEP_FOR);
         found.values().map(|(device, _)| device.clone()).filter(|d| d.video).collect()
+    }
+
+    /// Forgets the devices found, but `fixed`, while `discovery` is off:
+    /// Pley keeps none it may not look for.
+    fn forget_while_off(&self, fixed: Option<&Found>, discovery: bool) {
+        if discovery {
+            return;
+        }
+        let fixed = fixed.map(Found::key);
+        self.found.lock().retain(|key, _| Some(key) == fixed.as_ref());
+        *self.looked.lock() = None;
     }
 
     async fn look(&self, fixed: Option<Found>) {
