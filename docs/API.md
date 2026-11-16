@@ -386,7 +386,7 @@ interface MediaFile {
   selected_subtitle: number | null; // likewise; null = off
   audio_picked: boolean;            // true: the user picked selected_audio for the show or movie;
                                     // false: automatic, so a title's page names the language, not a track
-  chapters: Chapter[];              // from the container, by start time (empty if none)
+  chapters: Chapter[];              // from the container, by start time, at most 1,000 (empty if none)
 }
 
 interface Chapter {
@@ -2187,7 +2187,7 @@ one of an audiobook library is refused (`400`).
 | GET | `/api/files/{id}/subtitles/{index}.sup` | `play` | a PGS track as a `.sup` file (Kodi's) |
 | GET | `/api/files/{id}/trickplay` | `play` | seek-bar previews: `{ id, interval_ms, width, height, columns, rows, count, sheets, version }` |
 | GET | `/api/files/{id}/trickplay/{n}.jpg?v={id}` | `play` | preview sprite sheet `n` |
-| GET | `/api/files/{id}/chapters/{n}.jpg` | `play` | picture of chapter `n` (0-based) |
+| GET | `/api/files/{id}/chapters/{n}.jpg` | `play` | picture of chapter `n` (0-based, in the file's own order: `thumb_url` names it) |
 
 - **`GET /api/playback/{session_id}`**: `403` for someone else's session
   (administrators see any); `404` "playback session expired" once it is

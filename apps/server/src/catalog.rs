@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use futures::TryStreamExt;
-use pley_transcoder_api::{MediaInfo, MediaStream};
+use pley_transcoder_api::{Chapter, MediaInfo, MediaStream};
 use serde::Serialize;
 use sqlx::FromRow;
 
@@ -427,6 +427,35 @@ pub struct ChapterDto {
     /// Picture of the chapter, cut from the seek previews once they exist.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb_url: Option<String>,
+    /// Its place among the file's chapters as the probe listed them, which
+    /// its picture is named by.
+    #[serde(skip)]
+    pub probed_index: usize,
+}
+
+/// The most chapters a file is listed with: a book's tags may hold
+/// thousands.
+const MAX_CHAPTERS: usize = 1000;
+
+/// A file's chapters by start, at most [`MAX_CHAPTERS`] of them. Probes list
+/// them as the file does, and taggers write a book's out of order; players
+/// go through them in order.
+fn chapters_in_order(chapters: Vec<Chapter>) -> Vec<ChapterDto> {
+    let mut chapters: Vec<ChapterDto> = chapters
+        .into_iter()
+        .enumerate()
+        .map(|(n, c)| ChapterDto {
+            start_ms: c.start_ms,
+            end_ms: c.end_ms,
+            title: c.title,
+            thumb_url: None,
+            probed_index: n,
+        })
+        .collect();
+    // Stable: chapters starting together keep the file's order.
+    chapters.sort_by_key(|c| c.start_ms);
+    chapters.truncate(MAX_CHAPTERS);
+    chapters
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -683,10 +712,7 @@ impl FileRow {
             selected_audio: None,
             audio_picked: false,
             selected_subtitle: None,
-            chapters: chapters
-                .into_iter()
-                .map(|c| ChapterDto { start_ms: c.start_ms, end_ms: c.end_ms, title: c.title, thumb_url: None })
-                .collect(),
+            chapters: chapters_in_order(chapters),
         }
     }
 }
@@ -2454,5 +2480,23 @@ mod tests {
         assert_eq!(choices(&["dolby_vision"]), [] as [&str; 0]);
         assert_eq!(choices(&[]), [] as [&str; 0]);
         assert_eq!(choices(&["", "sdr"]), [] as [&str; 0]);
+    }
+
+    /// A book's chapters as a tagger wrote them, out of order: listed by
+    /// start, each with its place as probed (its picture's name), and no
+    /// more than a thousand.
+    #[test]
+    fn chapters_come_by_start_and_bounded() {
+        let chapter =
+            |start_ms: i64, title: &str| Chapter { start_ms, end_ms: start_ms + 1_000, title: Some(title.to_owned()) };
+        let listed = chapters_in_order(vec![chapter(2_000, "Three"), chapter(0, "One"), chapter(1_000, "Two")]);
+        let order: Vec<(&str, usize)> =
+            listed.iter().map(|c| (c.title.as_deref().unwrap_or_default(), c.probed_index)).collect();
+        assert_eq!(order, [("One", 1), ("Two", 2), ("Three", 0)]);
+
+        let many: Vec<Chapter> = (0..1_500).rev().map(|n| chapter(n * 1_000, "Part")).collect();
+        let listed = chapters_in_order(many);
+        assert_eq!(listed.len(), MAX_CHAPTERS);
+        assert_eq!((listed[0].start_ms, listed[999].start_ms), (0, 999_000), "the first thousand");
     }
 }

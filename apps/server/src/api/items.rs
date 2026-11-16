@@ -57,7 +57,8 @@ pub async fn get(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
             let Some(dto) = detail.files.iter_mut().find(|f| f.id == file.id) else { continue };
             if dto.chapters.len() > 1 && state.trickplay.has_chapter_images(&file) {
                 let version = file.fingerprint.as_deref().unwrap_or_default();
-                for (n, chapter) in dto.chapters.iter_mut().enumerate() {
+                for chapter in &mut dto.chapters {
+                    let n = chapter.probed_index;
                     chapter.thumb_url = Some(format!("/api/files/{}/chapters/{n}.jpg?v={version}", file.id));
                 }
             }
