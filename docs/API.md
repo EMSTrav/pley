@@ -272,7 +272,7 @@ interface ItemSummary {
   library_id: Id;
   kind: ItemKind;
   title: string;
-  sort_title: string;
+  sort_title: string;               // part: its file's name, numbers padded ("part 0000000002"), which orders a book's parts
   year?: number;
   index?: number;                   // season, episode, track or part number
   parent_id?: Id;                   // episode: season; season: show; track: album; album: artist; part: audiobook

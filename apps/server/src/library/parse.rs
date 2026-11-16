@@ -505,6 +505,10 @@ pub struct AudiobookName {
     pub part_title: String,
     pub part: Option<i32>,
     pub disc: Option<i32>,
+    /// What the part is sorted by after its disc and number: its file's
+    /// name (see [`natural_key`]), which tells parts apart when their tags
+    /// number none.
+    pub part_sort: String,
 }
 
 /// A folder of one disc of a book: `CD 1`, `Disc 02`, `Part 3`.
@@ -549,11 +553,39 @@ fn book_folder(name: &str) -> (String, Option<f64>, Option<i32>, Option<String>)
         title = c[2].trim().to_owned();
     }
     let mut index = None;
-    if let Some(c) = SERIES_PREFIX.captures(&title) {
+    if let Some(c) = SERIES_PREFIX.captures(&title)
+        // A bare number before another is the title's (`10.20.30`).
+        && (c.get(2).is_none() || !c[3].starts_with(|c: char| c.is_ascii_digit()))
+    {
         index = c.get(1).or(c.get(2)).and_then(|n| n.as_str().parse().ok());
         title = c[3].trim().to_owned();
     }
     (title.replace('_', " ").trim().to_owned(), index, year, narrator)
+}
+
+/// How many digits each number in a part's [`natural_key`] takes.
+const NUMBER_WIDTH: usize = 10;
+
+/// A file's name as a book's parts are sorted by it: in any case, and with
+/// each number padded to the same width, so `Part 2` comes before `Part 10`
+/// and `Chapter 9` before `chapter 10`.
+fn natural_key(name: &str) -> String {
+    let mut key = String::with_capacity(name.len() + NUMBER_WIDTH);
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        if !c.is_ascii_digit() {
+            key.extend(c.to_lowercase());
+            continue;
+        }
+        let mut number = String::from(c);
+        while let Some(d) = chars.next_if(char::is_ascii_digit) {
+            number.push(d);
+        }
+        let number = number.trim_start_matches('0');
+        key.extend(std::iter::repeat_n('0', NUMBER_WIDTH.saturating_sub(number.len())));
+        key.push_str(number);
+    }
+    key
 }
 
 /// Reads an audiobook's file: the book it is part of, from its tags
@@ -673,6 +705,7 @@ pub fn parse_audiobook(path: &Path, root: &Path, tags: &BTreeMap<String, String>
         part_title,
         part: tag(tags, &["track", "tracknumber"]).and_then(leading_int).or(file_part),
         disc: folder_disc.or_else(|| tag(tags, &["disc", "discnumber", "disk"]).and_then(leading_int)).or(file_disc),
+        part_sort: natural_key(&stem),
     }
 }
 
@@ -1041,6 +1074,27 @@ mod tests {
         assert_eq!(one.book_key, two.book_key);
         assert_eq!((one.disc, two.disc, one.part), (Some(1), Some(2), Some(1)));
         assert_eq!((one.authors.as_slice(), one.series), (["Author D".to_owned()].as_slice(), None));
+    }
+
+    #[test]
+    fn a_title_of_numbers_keeps_them() {
+        assert_eq!(book_folder("10.20.30"), ("10.20.30".to_owned(), None, None, None));
+        assert_eq!(book_folder("Book 1 - 10.20.30").0, "10.20.30");
+        // A place in a series still comes before a title.
+        assert_eq!(book_folder("01.Title"), ("Title".to_owned(), Some(1.0), None, None));
+        assert_eq!(book_folder("1_-_Title"), ("Title".to_owned(), Some(1.0), None, None));
+        assert_eq!(book_folder("2.5 - Novella"), ("Novella".to_owned(), Some(2.5), None, None));
+        assert_eq!(book_folder("Book 2 - 2048"), ("2048".to_owned(), Some(2.0), None, None));
+    }
+
+    #[test]
+    fn parts_sort_by_their_files_numbers() {
+        let mut names = ["Part 10", "part 2", "Part 1", "Part 1b", "Intro", "Part 01a"];
+        names.sort_by_key(|n| natural_key(n));
+        assert_eq!(names, ["Intro", "Part 1", "Part 01a", "Part 1b", "part 2", "Part 10"]);
+        assert_eq!(natural_key("Disc 0 - 7"), "disc 0000000000 - 0000000007");
+        let b = parse_audiobook(Path::new("/books/Book/Chapter 9.mp3"), Path::new("/books"), &BTreeMap::new());
+        assert_eq!((b.part, b.part_sort.as_str()), (None, "chapter 0000000009"));
     }
 
     #[test]

@@ -805,6 +805,8 @@ struct NewItem {
     kind: &'static str,
     key: String,
     title: String,
+    /// What it sorts by, when its title's [`sort_title`] isn't it.
+    sort_title: Option<String>,
     original_title: Option<String>,
     year: Option<i32>,
     idx: Option<i32>,
@@ -825,6 +827,7 @@ impl NewItem {
             kind,
             key,
             title,
+            sort_title: None,
             original_title: None,
             year: None,
             idx: None,
@@ -1093,6 +1096,8 @@ impl Writer<'_> {
         }
 
         let mut part = NewItem::new("part", format!("part:{}", path_str(&file.path)), name.part_title);
+        // Parts sort by their files' names (see `library::part_order`).
+        part.sort_title = Some(name.part_sort);
         part.parent_id = Some(book_id);
         part.idx = name.part;
         part.disc = name.disc;
@@ -1150,7 +1155,7 @@ async fn upsert_item(conn: &mut SqliteConnection, library_id: i64, item: &NewIte
     .bind(item.kind)
     .bind(&item.key)
     .bind(&item.title)
-    .bind(sort_title(&item.title))
+    .bind(item.sort_title.clone().unwrap_or_else(|| sort_title(&item.title)))
     .bind(&item.original_title)
     .bind(item.year)
     .bind(item.idx)
@@ -1300,13 +1305,17 @@ fn subtitle_changes(files: Vec<(i64, PathBuf, String)>, sidecars: &Sidecars) -> 
 
 /// Items and the files their local artwork is looked for next to.
 /// An audiobook's file is its first part's.
-const ARTWORK_ROWS: &str = "SELECT i.id, i.kind, i.path, i.idx, i.poster, i.backdrop, i.thumb, p.path AS parent_path,
+const ARTWORK_ROWS: &str = concat!(
+    "SELECT i.id, i.kind, i.path, i.idx, i.poster, i.backdrop, i.thumb, p.path AS parent_path,
         CASE WHEN i.kind = 'audiobook'
              THEN (SELECT f.path FROM media_files f JOIN items c ON c.id = f.item_id
-                   WHERE c.parent_id = i.id ORDER BY f.id LIMIT 1)
+                   WHERE c.parent_id = i.id ORDER BY ",
+    super::part_order!(),
+    " LIMIT 1)
              ELSE (SELECT f.path FROM media_files f WHERE f.item_id = i.id ORDER BY f.id LIMIT 1) END AS file_path
      FROM items i LEFT JOIN items p ON p.id = i.parent_id
-     WHERE i.library_id = ? AND i.kind IN ('movie', 'show', 'season', 'episode', 'artist', 'album', 'audiobook')";
+     WHERE i.library_id = ? AND i.kind IN ('movie', 'show', 'season', 'episode', 'artist', 'album', 'audiobook')"
+);
 
 #[derive(sqlx::FromRow)]
 struct ArtworkRow {

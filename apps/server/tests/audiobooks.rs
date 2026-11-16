@@ -348,3 +348,32 @@ async fn books_side_by_side_keep_their_own_covers() {
     app.wait_for_scans().await;
     assert_eq!(cover(&app, ids["Book Sixteen"]).await, None);
 }
+
+/// Parts that tags number not play in their files' order, with the numbers
+/// in the names read as numbers; a book's title of numbers keeps them.
+#[tokio::test]
+async fn parts_play_in_their_names_order() {
+    let (app, token) = tagged_app().await;
+    for n in 1..=10 {
+        app.media_file(&format!("books/Author A/Book Nine/Part {n}.mp3"), 512);
+    }
+    // Titled, but not numbered, by their tags.
+    tagged(&app, "books/Author A/Book Ten/Chapter 2.mp3", json!({"title": "Zebra"}));
+    tagged(&app, "books/Author A/Book Ten/Chapter 10.mp3", json!({"title": "Apple"}));
+    app.media_file("books/Author B/10.20.30/01.mp3", 512);
+    let lib = app.library(&token, "Audiobooks", "audiobooks", "books").await;
+
+    let ids = app.ids(lib, &token).await;
+    let parts = app.get(&format!("/api/items/{}/children", ids["Book Nine"]), &token).await;
+    let expected: Vec<String> = (1..=10).map(|n| format!("Part {n}")).collect();
+    assert_eq!(titles(&parts.body["items"]), expected);
+    let by_title = app.children(ids["Book Nine"], &token).await;
+    let next = app.get(&format!("/api/items/{}/next", by_title["Part 9"]), &token).await;
+    assert_eq!(next.body["item"]["title"], "Part 10");
+    let next = app.get(&format!("/api/items/{}/next", by_title["Part 2"]), &token).await;
+    assert_eq!(next.body["item"]["title"], "Part 3");
+
+    let parts = app.get(&format!("/api/items/{}/children", ids["Book Ten"]), &token).await;
+    assert_eq!(titles(&parts.body["items"]), ["Zebra", "Apple"]);
+    assert!(ids.contains_key("10.20.30"), "{ids:?}");
+}

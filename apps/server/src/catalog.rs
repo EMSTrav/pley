@@ -1788,13 +1788,14 @@ fn next_of(episodes: &[EpisodeState]) -> Option<i64> {
 
 /// An audiobook's parts in order with the user's state.
 async fn book_parts(db: &Db, user_id: i64, book_id: i64) -> sqlx::Result<Vec<EpisodeState>> {
-    sqlx::query_as(
+    sqlx::query_as(concat!(
         "SELECT p.id, COALESCE(s.watched, 0) AS watched, COALESCE(s.position_ms, 0) AS position_ms,
                 COALESCE(s.play_count, 0) AS play_count, s.last_played_at
          FROM items p LEFT JOIN user_item_state s ON s.item_id = p.id AND s.user_id = ?
          WHERE p.parent_id = ? AND p.kind = 'part'
-         ORDER BY p.disc, p.idx IS NULL, p.idx, p.sort_title",
-    )
+         ORDER BY ",
+        crate::library::part_order!()
+    ))
     .bind(user_id)
     .bind(book_id)
     .fetch_all(&db.read)
@@ -1970,9 +1971,10 @@ pub async fn next_item(db: &Db, item: &ItemRow) -> sqlx::Result<Option<i64>> {
         }
         // In the order of [`book_parts`].
         "part" => {
-            let ids: Vec<i64> = sqlx::query_scalar(
-                "SELECT id FROM items WHERE parent_id = ? AND kind = 'part' ORDER BY disc, idx IS NULL, idx, sort_title",
-            )
+            let ids: Vec<i64> = sqlx::query_scalar(concat!(
+                "SELECT id FROM items WHERE parent_id = ? AND kind = 'part' ORDER BY ",
+                crate::library::part_order!()
+            ))
             .bind(item.parent_id)
             .fetch_all(&db.read)
             .await?;

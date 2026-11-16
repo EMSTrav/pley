@@ -14,6 +14,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Db;
 
+/// The order an audiobook's parts play in, as SQL over `items`: by disc,
+/// by number, then by their files' names with the numbers in them read as
+/// numbers (`Part 2` before `Part 10`), which is a part's `sort_title`
+/// (see [`parse::AudiobookName::part_sort`]).
+macro_rules! part_order {
+    () => {
+        "disc, idx IS NULL, idx, sort_title"
+    };
+}
+pub(crate) use part_order;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LibraryKind {

@@ -41,6 +41,9 @@ the Plex- and Jellyfin-compatible APIs don't get them.
   its year (`Title (2007)`), and name its narrator in braces
   (`Title {Narrator B}`), as Audiobookshelf's do. An `.m4b` without an
   `album` tag is named by its file.
+- A book's parts play by disc and number (their tags', or the one their
+  files' names begin with), then in their files' names' order, numbers
+  read as numbers: `Part 2` before `Part 10`.
 - The files' tags win over their folders: `album` is the book,
   `album_artist` or `artist` its authors (`;`, `&` or `/` between
   several), `composer` or `narrator` its narrators, `series` and
