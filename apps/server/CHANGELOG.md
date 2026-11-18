@@ -23,6 +23,11 @@ describes how they are made.
   intro detection aren't made for it
   ([docs/CONFIGURATION.md](../../docs/CONFIGURATION.md#strm-files)).
 
+### Fixed
+
+- In the web app, search lists the audiobooks whose title matches. A
+  book's title gave a results page with nothing on it.
+
 ## [0.1.13] - 2026-11-18
 
 ### Added
