@@ -5,14 +5,18 @@
 //!   subscriber PIN).
 //! - [`musicbrainz`]: artists and albums, no key needed, with album covers
 //!   from the Cover Art Archive.
+//! - [`books`]: audiobooks from Audible's catalog, else Open Library, no key
+//!   needed.
 //! - [`opensubtitles`]: subtitles to add to a file, with an API key each
 //!   server's administrator gets (see [`crate::subtitles`]).
 //!
 //! [`crate::metadata::MetadataAgent`] decides which source refreshes an item
-//! (see [`tv_source`]) and hands TV shows and music to [`Providers`]. The TV
+//! (see [`tv_source`]) and hands TV shows, music and audiobooks to
+//! [`Providers`]. The TV
 //! providers only fetch and translate; [`tv::write`] stores a show the same
 //! way for both.
 
+pub mod books;
 pub mod musicbrainz;
 pub mod opensubtitles;
 pub mod tv;
@@ -55,6 +59,10 @@ pub struct Endpoints {
     pub tmdb_images: String,
     /// OpenSubtitles.com's API (used once its key is set).
     pub opensubtitles: String,
+    /// Audible's catalog, `{tld}` the store's domain ([`books::AUDIBLE`]).
+    pub audible: String,
+    pub openlibrary: String,
+    pub openlibrary_covers: String,
 }
 
 impl Default for Endpoints {
@@ -67,6 +75,9 @@ impl Default for Endpoints {
             tmdb: crate::metadata::API.into(),
             tmdb_images: crate::metadata::IMAGES.into(),
             opensubtitles: opensubtitles::API.into(),
+            audible: books::AUDIBLE.into(),
+            openlibrary: books::OPEN_LIBRARY.into(),
+            openlibrary_covers: books::OPEN_LIBRARY_COVERS.into(),
         }
     }
 }
@@ -120,8 +131,9 @@ pub async fn settings_changed(db: &Db, before: &Settings, after: &Settings) -> s
     let tvdb_key =
         (before.tvdb_api_key != after.tvdb_api_key || before.tvdb_pin != after.tvdb_pin) && tv == Some(TvSource::Tvdb);
     let music = after.music_metadata && !before.music_metadata;
+    let books = after.book_metadata && !before.book_metadata;
     let nfo = before.read_nfo != after.read_nfo;
-    Ok(tmdb_key || tvdb_key || music || nfo || (tv_changed && tv.is_some()))
+    Ok(tmdb_key || tvdb_key || music || books || nfo || (tv_changed && tv.is_some()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -150,9 +162,11 @@ pub enum Check<'a> {
     },
     Tvmaze,
     MusicBrainz,
+    /// Audible, in the server's country's store, and Open Library.
+    Books,
 }
 
-/// TV shows and music from the providers that aren't TMDB.
+/// TV shows, music and audiobooks from the providers that aren't TMDB.
 pub struct Providers {
     db: Db,
     settings: Arc<SettingsStore>,
@@ -160,10 +174,12 @@ pub struct Providers {
     tvmaze: Option<tvmaze::Tvmaze>,
     tvdb: Option<tvdb::Tvdb>,
     musicbrainz: Option<musicbrainz::MusicBrainz>,
+    books: Option<books::Books>,
 }
 
 impl Providers {
-    /// `endpoints: None` never contacts TVmaze, TheTVDB or MusicBrainz.
+    /// `endpoints: None` never contacts TVmaze, TheTVDB, MusicBrainz, Audible
+    /// or Open Library.
     pub fn new(db: Db, settings: Arc<SettingsStore>, store: Arc<Store>, endpoints: Option<Endpoints>) -> Self {
         let client = |redirects: bool| {
             let policy =
@@ -175,7 +191,7 @@ impl Providers {
                 .build()
                 .expect("http client")
         };
-        let (tvmaze, tvdb, musicbrainz) = match endpoints {
+        let (tvmaze, tvdb, musicbrainz, books) = match endpoints {
             Some(e) => (
                 // TVmaze answers lookups with a redirect; its target is read
                 // instead of fetched.
@@ -188,10 +204,18 @@ impl Providers {
                     db.clone(),
                     store.clone(),
                 )),
+                Some(books::Books::new(
+                    client(true),
+                    &e.audible,
+                    &e.openlibrary,
+                    &e.openlibrary_covers,
+                    db.clone(),
+                    store.clone(),
+                )),
             ),
-            None => (None, None, None),
+            None => (None, None, None, None),
         };
-        Self { db, settings, store, tvmaze, tvdb, musicbrainz }
+        Self { db, settings, store, tvmaze, tvdb, musicbrainz, books }
     }
 
     /// The TV source in use, `None` when it can't be used.
@@ -210,6 +234,42 @@ impl Providers {
             Check::Tvdb { key, pin } => self.tvdb.as_ref().ok_or_else(off)?.check(key, pin).await,
             Check::Tvmaze => self.tvmaze.as_ref().ok_or_else(off)?.check().await,
             Check::MusicBrainz => self.musicbrainz.as_ref().ok_or_else(off)?.check().await,
+            Check::Books => self.books.as_ref().ok_or_else(off)?.check(&self.wanted()).await,
+        }
+    }
+
+    /// Whether audiobooks are looked up on Audible and Open Library.
+    pub fn books_enabled(&self) -> bool {
+        self.books.is_some() && self.settings.get().book_metadata
+    }
+
+    /// The store and language books are looked up in.
+    fn wanted(&self) -> books::Wanted {
+        let settings = self.settings.get();
+        books::Wanted { country: crate::ratings::region_in(&settings), language: settings.metadata_language.clone() }
+    }
+
+    /// Look a book (or a part's book) up on Audible, else Open Library.
+    pub async fn refresh_book_item(&self, item_id: i64) -> Result<(), ProviderError> {
+        match &self.books {
+            Some(books) if self.settings.get().book_metadata => books.refresh_item(item_id, &self.wanted()).await,
+            _ => Ok(()),
+        }
+    }
+
+    /// Fetch metadata for the books of an audiobook library that have none
+    /// yet (or all, when `force`).
+    pub async fn refresh_book_library(
+        &self,
+        lib: &LibraryRow,
+        force: bool,
+        progress: &(dyn Fn(u64, u64) + Sync),
+    ) -> anyhow::Result<()> {
+        match &self.books {
+            Some(books) if self.settings.get().book_metadata => {
+                books.refresh_library(lib, force, &self.wanted(), progress).await
+            }
+            _ => Ok(()),
         }
     }
 

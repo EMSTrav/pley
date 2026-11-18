@@ -56,12 +56,16 @@
       "musicHint": "Géneros y fechas de lanzamiento de <a>MusicBrainz</a>, y portadas del Cover Art Archive para los álbumes que no tienen. Las etiquetas de los archivos tienen prioridad. No hace falta clave; la primera búsqueda tarda alrededor de un segundo por álbum.",
       "musicToggle": "Metadatos de música de MusicBrainz",
       "testMusicBrainz": "Probar MusicBrainz",
+      "books": "Metadatos de audiolibros",
+      "booksHint": "Sinopsis, narradores, series, géneros y portadas de la tienda de <audible>Audible</audible> de tu país, en el idioma de los metadatos, o de <openlibrary>Open Library</openlibrary> para los libros que Audible no tiene. Las etiquetas de los archivos tienen prioridad. No hace falta clave.",
+      "booksToggle": "Metadatos de audiolibros de Audible y Open Library",
+      "testBooks": "Probar Audible y Open Library",
       "nfo": "Archivos NFO",
       "nfoHint": "Los archivos NFO que Kodi, Jellyfin, Radarr y Sonarr guardan junto a las películas y series: sus identificadores deciden la coincidencia y sus datos prevalecen sobre los de la fuente de metadatos. Tus cambios prevalecen sobre ellos. Pley nunca los modifica.",
       "nfoToggle": "Leer los archivos NFO",
       "language": "Títulos y resúmenes",
-      "languageHint": "Para TMDB y TheTVDB. TVmaze está en inglés.",
-      "attribution": "Este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica. Metadatos de TV de <tvdb>TheTVDB</tvdb>. Los datos de TV de TVmaze tienen licencia <license>CC BY-SA</license>; los datos de música de MusicBrainz son de dominio público."
+      "languageHint": "Para TMDB y TheTVDB, y las grabaciones de audiolibros elegidas en Audible. TVmaze está en inglés.",
+      "attribution": "Este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica. Metadatos de TV de <tvdb>TheTVDB</tvdb>. Los datos de TV de TVmaze tienen licencia <license>CC BY-SA</license>; los datos de música de MusicBrainz y los de audiolibros de Open Library son de dominio público; los datos y las portadas de audiolibros de Audible pertenecen a sus titulares."
     },
     "subtitles": {
       "title": "Subtítulos",
