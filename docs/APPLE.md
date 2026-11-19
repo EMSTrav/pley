@@ -230,13 +230,16 @@ behind it.
   descending · Unwatched"). Sorted by title, with more than 30 titles and
   at most 2,000, the letters "#" and A to Z jump through the grid: down
   the side on iPhone, iPad and Mac (a tap or a drag; VoiceOver's "Jump to
-  letter", swiped up and down), a row above the grid on Apple TV. A letter
-  without titles is dim and goes to the next that has some. The page
-  opens as it was last left, for each server, profile and library, unless
-  See all asks for a view. Filters that hide everything say so, with
-  Clear filters. **Save as Smart Playlist** (in More on iPhone, iPad and
-  Mac, a button in the row on Apple TV) keeps the sort and filters
-  showing as a smart playlist.
+  letter", swiped up and down), down the right of the screen on Apple TV,
+  staying while the grid scrolls (right from the grid's last column). A
+  letter without titles is dim and goes to the next that has some. The
+  page opens as it was last left, for each server, profile and library,
+  unless See all asks for a view. Filters that hide everything say so,
+  with Clear filters. **Save as Smart Playlist** (in More on iPhone, iPad
+  and Mac, at the far end of the row on Apple TV) keeps the sort and
+  filters showing as a smart playlist. On Apple TV the top of the page and
+  its buttons scroll away with the titles, so the grid has the screen once
+  the focus is in it, and its columns fill the width between the margins.
 - **Me** (Settings on Apple TV): the profile's picture and name ("Managed
   profile" for one without a password of its own), Switch profile (when
   the household has another profile), Discover and Your requests
