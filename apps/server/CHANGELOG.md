@@ -11,6 +11,9 @@ describes how they are made.
 
 ### Added
 
+- A Live TV channel the source's guide lacks can take a guide of its own:
+  the address of an XMLTV guide, such as epg.pw's for one channel, in its
+  Guide channel in the lineup. It is read with the source's guide.
 - `.strm` files in movie and TV libraries, as Kodi, Jellyfin and Emby read
   them: a text file that names the `http` or `https` address a video is at
   is listed, played, converted and downloaded like a video on disk, on

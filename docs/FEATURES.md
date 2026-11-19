@@ -144,7 +144,9 @@ the Plex- and Jellyfin-compatible APIs don't get them.
 
 - IPTV channels from M3U playlists and Xtream Codes accounts, with their
   guide from XMLTV, on every app: categories, a guide, a channel's number
-  typed on the remote, and one search with the rest of the library.
+  typed on the remote, and one search with the rest of the library. A
+  channel the source's guide lacks can take an XMLTV guide of its own by
+  its address, such as one of epg.pw's.
 - A channel is pulled once however many watch it, and a source never plays
   more channels at once than its provider allows; changing channels frees
   the connection at once.

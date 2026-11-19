@@ -80,6 +80,32 @@ fn guide_xml() -> Vec<u8> {
     gz.finish().unwrap()
 }
 
+/// A guide for a channel alone (`one.xml`), as epg.pw gives them, or with
+/// others (`many.xml`); anything else isn't there.
+fn own_guide(name: &str) -> axum::response::Response {
+    let at = |offset: i64| format!("{} +0000", chrono_like(pley::util::now() + offset));
+    let xml = match name {
+        "one.xml" => format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<tv><channel id="465349"><display-name lang="US">Ten Extra</display-name></channel>
+  <programme channel="465349" start="{}" stop="{}"><title>Ten's Own Show</title></programme></tv>"#,
+            at(-300),
+            at(3000)
+        ),
+        "many.xml" => format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<tv><channel id="a.test"><display-name>Another</display-name></channel>
+  <channel id="b.test"><display-name>Two HD</display-name></channel>
+  <programme channel="a.test" start="{0}" stop="{1}"><title>Not This</title></programme>
+  <programme channel="b.test" start="{0}" stop="{1}"><title>Match of the Day</title></programme></tv>"#,
+            at(-300),
+            at(3000)
+        ),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    ([(header::CONTENT_TYPE, "application/xml")], xml).into_response()
+}
+
 /// Unix seconds as XMLTV's `YYYYMMDDHHMMSS` (UTC).
 fn chrono_like(t: i64) -> String {
     let days = t.div_euclid(86_400);
@@ -114,8 +140,11 @@ async fn provider() -> (String, Arc<Provider>) {
          #EXTINF:-1 group-title=\"Films\",A film\n\
          {base}/movie/u/p/5.mkv\n"
     );
+    // The same channels, with no guide named.
+    let bare = playlist.replacen(&format!(" url-tvg=\"{base}/guide.xml.gz\""), "", 1);
     let app = Router::new()
         .route("/list.m3u", get(move || async move { playlist }))
+        .route("/bare.m3u", get(move || async move { bare }))
         .route(
             "/guide.xml.gz",
             get(|State(counts): State<Arc<Provider>>| async move {
@@ -127,6 +156,8 @@ async fn provider() -> (String, Arc<Provider>) {
             }),
         )
         .route("/logo.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], PNG) }))
+        // Guides of a channel's own: one channel, or several to pick from.
+        .route("/own/{name}", get(|Path(name): Path<String>| async move { own_guide(&name) }))
         .route(
             "/live/{n}",
             get(|State(counts): State<Arc<Provider>>, Path(n): Path<String>| async move {
@@ -365,6 +396,112 @@ async fn a_guide_channel_set_by_hand_has_its_programmes_at_once() {
     assert_eq!(ten["now"]["title"], "The News");
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(provider.guides.load(Ordering::SeqCst), 2);
+}
+
+/// A channel the source's guide lacks takes a guide of its own by its
+/// address, read with the source's: its only channel, or the one of its
+/// name. One that can't be read says so in the source, and the rest of the
+/// guide is read all the same. Only web addresses are taken.
+#[tokio::test]
+async fn a_channel_takes_a_guide_of_its_own_by_its_address() {
+    let (base, _provider) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let added = app
+        .post(
+            "/api/live/sources",
+            &admin,
+            json!({"name": "Provider", "kind": "m3u", "url": format!("{base}/list.m3u")}),
+        )
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{:?}", added.body);
+    let source_id = added.body["id"].as_i64().unwrap();
+    wait_until_read(&app, &admin).await;
+    let channels = app.get("/api/live/channels", &admin).await.body;
+    let id_of =
+        |name: &str| channels.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["id"].as_i64().unwrap();
+    let (one, two, ten) = (id_of("One"), id_of("Two HD"), id_of("Ten"));
+    let set = |id: i64, guide: String| {
+        let app = &app;
+        let admin = admin.clone();
+        async move { app.patch("/api/live/lineup", &admin, json!({"ids": [id], "guide_id": guide})).await.status }
+    };
+
+    // A guide with the channel alone.
+    assert_eq!(set(ten, format!("{base}/own/one.xml")).await, StatusCode::NO_CONTENT);
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
+    assert_eq!(on_now(&app, &admin, one).await["title"], "The News", "the source's guide is read too");
+    // One with others: the channel of its name.
+    assert_eq!(set(two, format!("{base}/own/many.xml")).await, StatusCode::NO_CONTENT);
+    for _ in 0..100 {
+        if on_now(&app, &admin, two).await["title"] == "Match of the Day" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(on_now(&app, &admin, two).await["title"], "Match of the Day");
+
+    // Read again on a refresh, from the same addresses.
+    assert_eq!(
+        app.post(&format!("/api/live/sources/{source_id}/refresh"), &admin, json!({})).await.status,
+        StatusCode::ACCEPTED
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_until_read(&app, &admin).await;
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
+
+    // One that isn't there: the source says so, and the rest stays.
+    assert_eq!(set(ten, format!("{base}/own/gone.xml")).await, StatusCode::NO_CONTENT);
+    let mut error = Value::Null;
+    for _ in 0..100 {
+        let sources = app.get("/api/live/sources", &admin).await.body;
+        error = sources[0]["guide_error"].clone();
+        if error.is_string() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let error = error.as_str().unwrap_or_default();
+    assert!(error.starts_with("Ten: ") && error.contains("404"), "{error}");
+    assert_eq!(on_now(&app, &admin, one).await["title"], "The News");
+    assert_eq!(on_now(&app, &admin, two).await["title"], "Match of the Day");
+
+    // A file here, or another kind of address, isn't a guide of its own.
+    for guide in ["file:///etc/passwd", "/etc/passwd", "ftp://example.com/guide.xml", "https://"] {
+        assert_eq!(set(ten, guide.into()).await, StatusCode::BAD_REQUEST, "{guide}");
+    }
+    assert_eq!(set(ten, "x".repeat(2049)).await, StatusCode::BAD_REQUEST);
+}
+
+/// A source with no guide still reads the guides its channels were given.
+#[tokio::test]
+async fn a_source_without_a_guide_reads_its_channels_own() {
+    let (base, provider) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let added = app
+        .post(
+            "/api/live/sources",
+            &admin,
+            json!({"name": "Provider", "kind": "m3u", "url": format!("{base}/bare.m3u")}),
+        )
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{:?}", added.body);
+    // Its channels read: it has no guide to read.
+    for _ in 0..100 {
+        let s = app.get("/api/live/sources", &admin).await.body[0].clone();
+        if s["channels_at"].is_i64() && !s["refreshing"].as_bool().unwrap_or(true) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let channels = app.get("/api/live/channels", &admin).await.body;
+    let ten = channels.as_array().unwrap().iter().find(|c| c["name"] == "Ten").unwrap()["id"].as_i64().unwrap();
+    let set =
+        app.patch("/api/live/lineup", &admin, json!({"ids": [ten], "guide_id": format!("{base}/own/one.xml")})).await;
+    assert_eq!(set.status, StatusCode::NO_CONTENT);
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
+    assert_eq!(provider.guides.load(Ordering::SeqCst), 0, "the provider's guide was never named");
 }
 
 /// Channel `id`'s programme on now, once it has one (within 10 s).
