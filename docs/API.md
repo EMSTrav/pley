@@ -253,6 +253,8 @@ interface Library {
   scanning: boolean;                // a scan is queued or running
   labels_pending?: boolean;         // when true: a Plex import is bringing Plex's labels to it, and profiles
                                     // with labels they never see don't see it until a run finishes
+  tmdb_collections: boolean;        // Pley makes collections from TMDB in it; only a movie library uses it,
+                                    // and the others are always true
 }
 
 type ItemKind = "movie" | "show" | "season" | "episode" | "artist" | "album" | "track"
@@ -1686,12 +1688,12 @@ Invitations have fixed limits only.
 | Method | Path | Who | What |
 |---|---|---|---|
 | GET | `/api/libraries` | `library` | `Library[]` in the user's order (query `order=shared`: the shared order) |
-| POST | `/api/libraries` | `admin` | `{ name, kind, paths: string[] }` → `201` `Library`; queues a scan |
+| POST | `/api/libraries` | `admin` | `{ name, kind, paths: string[], tmdb_collections?: boolean }` → `201` `Library`; queues a scan. `tmdb_collections: false` for a library that isn't `movies` is `400` |
 | PUT | `/api/libraries/order` | `admin` | `{ ids: Id[] }` (every library, once) → `Library[]` in the new shared order |
 | PUT | `/api/me/libraries/order` | `play` | `{ ids: Id[] }` (every library the user may open, once) → `Library[]` in the user's own new order |
 | DELETE | `/api/me/libraries/order` | `play` | `Library[]` in the shared order, which the user sees again |
 | GET | `/api/libraries/{id}` | `library` | `Library` |
-| PATCH | `/api/libraries/{id}` | `admin` | `{ name?, paths?, labels_pending? }` → `Library`; `labels_pending: false` shows it sooner than a Plex import would |
+| PATCH | `/api/libraries/{id}` | `admin` | `{ name?, paths?, labels_pending?, tmdb_collections? }` → `Library`; `labels_pending: false` shows it sooner than a Plex import would; `tmdb_collections` [below](#collections), and `false` for a library that isn't `movies` is `400` |
 | DELETE | `/api/libraries/{id}` | `admin` | `204` |
 | POST | `/api/libraries/{id}/scan` | `admin` | `{ force?: boolean }` → `202`. `force` re-probes files and refreshes metadata |
 | POST | `/api/libraries/scan` | `admin` | `202`: scans every library |
@@ -2081,7 +2083,12 @@ Groups of movies or shows of one library, shared by every user.
 - *Automatic* collections mirror TMDB's movie collections: each matched
   movie is filed under its `belongs_to_collection` (with that collection's
   poster and backdrop), and collections left empty are dropped. One is
-  listed once two of its movies are visible to the user.
+  listed once two of its movies are visible to the user. A library whose
+  `tmdb_collections` is off, for another tool such as Kometa to make its
+  collections, has none: turning it off removes them all, with any edits
+  to them (where they show, their artwork, films added by hand); turning
+  it on fetches the library's metadata again, which makes them as TMDB has
+  them.
 - Administrators make their own and can edit either kind; an edited title
   is kept over TMDB's.
 - The [access rules](#access-rules) apply: hidden items are left out, and a
@@ -2135,10 +2142,10 @@ removed or reordered (`400`); change the filter instead.
 
 A library's collections are grouped by category: Pley's own, Highlights
 (`key` `highlights`, the collections Pley makes), Other (`other`, for
-collections without one) and Franchises (`franchises`, TMDB's), named in
+collections without one) and Box sets (`box_sets`, TMDB's), named in
 each user's language, and administrators' own. They are shared by every
 library, in the order administrators choose; a new server puts Other just
-before Franchises. A collection without a category is sent with Other as
+before Box sets. A collection without a category is sent with Other as
 its `category`, so an app groups collections by `category` in the order
 of this list, Other included; put in Other, it has none.
 Group labels set through the compatibility APIs, such as Kometa's
@@ -2149,7 +2156,7 @@ administrator chose for a collection stays.
 ```ts
 interface Category {
   id: Id;
-  key: "highlights" | "other" | "franchises" | null;   // null: an administrator's
+  key: "highlights" | "other" | "box_sets" | null;     // null: an administrator's
   title: string;
   from_label: string | null;        // the group label it was made from
   position: number;

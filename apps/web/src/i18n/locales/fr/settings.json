@@ -445,6 +445,10 @@
       "typePath": "…ou saisissez le chemin d’un dossier",
       "folderPath": "Chemin du dossier",
       "layout": "Organisation recommandée : <path>{{layout}}</path>",
+      "tmdbCollections": "Créer les collections depuis TMDB",
+      "tmdbCollectionsHint": "Regroupe les films dans les collections de TMDB. Désactivez cette option si vous gérez les collections avec un outil externe, comme Kometa.",
+      "tmdbCollectionsOffTitle": "Retirer les collections TMDB ?",
+      "tmdbCollectionsOffMessage": "Les collections de TMDB dans <name>{{name}}</name> seront supprimées, y compris les modifications que vous y avez apportées.",
       "nothingMounted": "Pley tourne dans un conteneur où aucun dossier de médias n’est encore monté. Montez le vôtre sur <path>/media</path> (avec Docker, <path>-v /vos/medias:/media:ro</path>), puis redémarrez le conteneur."
     }
   },
