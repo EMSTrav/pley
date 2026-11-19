@@ -444,6 +444,14 @@ impl MetadataAgent {
         Ok(())
     }
 
+    /// Make the movies of a library matched to the same title one movie
+    /// ([`crate::library::merge`]); the scanner does after each scan.
+    async fn merge_movies(&self, library_id: i64) {
+        if let Err(err) = crate::library::merge::same_movies(&self.db, library_id).await {
+            tracing::warn!("merging copies of the same movie in library {library_id} failed: {err}");
+        }
+    }
+
     /// Cast and crew of movies and shows matched before credits were stored:
     /// one request per movie, and one per show and season.
     pub async fn backfill_credits(&self, library_id: Option<i64>) {
@@ -584,7 +592,18 @@ impl MetadataAgent {
         .fetch_optional(&self.db.read)
         .await?;
         let Some(item) = item else { return Ok(()) };
-        self.refresh_candidate(item).await.map_err(|e| anyhow::anyhow!(e.to_string()))
+        let movie = item.kind == "movie";
+        self.refresh_candidate(item).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        if movie {
+            let library: Option<i64> = sqlx::query_scalar("SELECT library_id FROM items WHERE id = ?")
+                .bind(target)
+                .fetch_optional(&self.db.read)
+                .await?;
+            if let Some(library) = library {
+                self.merge_movies(library).await;
+            }
+        }
+        Ok(())
     }
 
     async fn refresh_candidate(&self, item: Candidate) -> Result<(), TmdbError> {
@@ -641,6 +660,18 @@ impl MetadataAgent {
     /// choice is kept as an override ([`crate::overrides::MATCH`]): the ids
     /// of the item's NFO file don't undo it.
     pub async fn rematch(&self, item_id: i64, tmdb_id: i64) -> anyhow::Result<()> {
+        // A movie other copies were merged into: they go back to being
+        // movies of their own, found again by their names.
+        let row: Option<(String, i64)> = sqlx::query_as("SELECT kind, library_id FROM items WHERE id = ?")
+            .bind(item_id)
+            .fetch_optional(&self.db.read)
+            .await?;
+        let mut split = Vec::new();
+        if let Some(("movie", library)) = row.as_ref().map(|(k, l)| (k.as_str(), *l))
+            && let Some(lib) = crate::library::get_library(&self.db, library).await?
+        {
+            split = crate::library::merge::split(&self.db, &lib, item_id).await?;
+        }
         let mut tx = self.db.write.begin().await?;
         // The other ids were the old title's.
         let matched = sqlx::query(
@@ -683,6 +714,11 @@ impl MetadataAgent {
         // An NFO file naming the old title no longer describes the item:
         // what it set gives way to the chosen title's metadata.
         crate::overrides::nfo_set_aside(&self.db, item_id).await?;
+        for id in split {
+            if let Err(err) = self.refresh_item(id).await {
+                tracing::warn!("metadata for movie {id}, split from {item_id}, failed: {err:#}");
+            }
+        }
         self.refresh_item(item_id).await
     }
 

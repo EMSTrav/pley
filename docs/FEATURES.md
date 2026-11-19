@@ -14,6 +14,12 @@ What Pley does, in full. The [README](../README.md) has the short version.
   `104 - Title` in a `Season 1` folder, `Season 1 Episode 4`, or a title
   alone, which TMDB numbers by its title. Two files never merge into one
   episode for lack of a number.
+- Copies of a movie are one movie with versions, even when their names
+  differ (TMDB corrected the year or title after the first was named):
+  movies in a library matched to the same TMDB title merge, with what
+  everyone watched, rated, listed and edited of either. Fix Match on it
+  lets the copies whose names don't make it go back to being movies of
+  their own.
   [deploy/docker/media](../deploy/docker/media/README.md) shows a layout.
 - `.strm` files, as Kodi, Jellyfin and Emby read them: a text file in a
   movie or TV library that names the `http` or `https` address its video

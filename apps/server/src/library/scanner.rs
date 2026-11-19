@@ -462,6 +462,15 @@ impl Scanner {
             }
             self.events.send(ServerEvent::LibraryChanged { library_id });
         }
+        // Copies of a movie matched to the same title (by TMDB, or by their
+        // NFO files without it) become one movie.
+        if lib.kind() == LibraryKind::Movies {
+            match super::merge::same_movies(&self.db, library_id).await {
+                Ok(merged) if !merged.is_empty() => self.events.send(ServerEvent::LibraryChanged { library_id }),
+                Ok(_) => {}
+                Err(err) => tracing::warn!("merging copies of the same movie in library {library_id} failed: {err}"),
+            }
+        }
         if totals.removed > 0 {
             self.metadata.prune_people().await;
         }
@@ -1073,18 +1082,7 @@ impl<'a> Writer<'a> {
         file: &FoundFile,
         duration: Option<i64>,
     ) -> anyhow::Result<i64> {
-        let name = parse_movie(&file.path, &file.root);
-        let key = match name.tmdb_id {
-            Some(id) => format!("movie:tmdb:{id}"),
-            None => format!("movie:{}:{}", normalize_key(&name.title), name.year.unwrap_or(0)),
-        };
-        let mut item = NewItem::new("movie", key, name.title);
-        item.year = name.year;
-        item.duration_ms = duration;
-        item.tmdb_id = name.tmdb_id;
-        item.imdb_id = name.imdb_id;
-        item.path = file.path.parent().filter(|p| *p != file.root).map(path_str);
-        Ok(upsert_item(conn, self.library_id, &item).await?)
+        Ok(movie_for_file(conn, self.library_id, &file.path, &file.root, duration, true).await?)
     }
 
     async fn write_episode(
@@ -1298,6 +1296,49 @@ fn episode_title(name: &EpisodeName, file: &Path) -> String {
         (Some(number), None) => format!("Episode {number}"),
         (None, _) => file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
     })
+}
+
+/// A movie file's key: its TMDB id when its name gives one, else its title
+/// and year.
+pub(super) fn movie_key(path: &Path, root: &Path) -> String {
+    let name = parse_movie(path, root);
+    match name.tmdb_id {
+        Some(id) => format!("movie:tmdb:{id}"),
+        None => format!("movie:{}:{}", normalize_key(&name.title), name.year.unwrap_or(0)),
+    }
+}
+
+/// The movie a file is a copy of: the one its name's key makes, or, with
+/// `aliases`, the movie that key's movie was merged into
+/// ([`super::merge`]).
+pub(super) async fn movie_for_file(
+    conn: &mut SqliteConnection,
+    library_id: i64,
+    path: &Path,
+    root: &Path,
+    duration: Option<i64>,
+    aliases: bool,
+) -> sqlx::Result<i64> {
+    let key = movie_key(path, root);
+    if aliases {
+        let merged: Option<i64> =
+            sqlx::query_scalar("SELECT item_id FROM item_aliases WHERE library_id = ? AND key = ?")
+                .bind(library_id)
+                .bind(&key)
+                .fetch_optional(&mut *conn)
+                .await?;
+        if let Some(id) = merged {
+            return Ok(id);
+        }
+    }
+    let name = parse_movie(path, root);
+    let mut item = NewItem::new("movie", key, name.title);
+    item.year = name.year;
+    item.duration_ms = duration;
+    item.tmdb_id = name.tmdb_id;
+    item.imdb_id = name.imdb_id;
+    item.path = path.parent().filter(|p| *p != root).map(path_str);
+    upsert_item(conn, library_id, &item).await
 }
 
 async fn upsert_item(conn: &mut SqliteConnection, library_id: i64, item: &NewItem) -> sqlx::Result<i64> {

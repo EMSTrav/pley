@@ -718,3 +718,74 @@ async fn an_episode_without_a_number_is_found_by_its_title() {
     app.wait_for_scans().await;
     assert_eq!(listed().await, numbered);
 }
+
+/// Copies of a film whose names give different years (TMDB corrected it
+/// after the first was named) become one movie once both are matched to the
+/// same title: its files are versions, and what was done with either stays.
+/// A later scan keeps them one; fixing the match lets the other copy go.
+#[tokio::test]
+async fn copies_matched_to_the_same_title_are_one_movie() {
+    let (app, _tmdb, admin, lib) = world().await;
+    app.media_file("movies/Aliens (1987) 2160p.mkv", 2048);
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({})).await;
+    app.wait_for_scans().await;
+    let aliens = || async {
+        let page = app.get(&format!("/api/libraries/{lib}/items"), &admin).await.body;
+        let mut found: Vec<(i64, i64)> = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["title"] == "Aliens")
+            .map(|i| (i["id"].as_i64().unwrap(), i["year"].as_i64().unwrap_or(0)))
+            .collect();
+        found.sort();
+        found
+    };
+    // Without a key, nothing tells them apart from two films.
+    let before = aliens().await;
+    assert_eq!(before.iter().map(|(_, y)| *y).collect::<Vec<_>>(), [1986, 1987]);
+    let (first, second) = (before[0].0, before[1].0);
+    // Watched and on My List as the 4K copy, rated as the other.
+    assert_eq!(
+        app.post(&format!("/api/items/{second}/watched"), &admin, json!({})).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert!(app.put(&format!("/api/watchlist/{second}"), &admin, json!({})).await.status.is_success());
+    let rated = app.put(&format!("/api/items/{first}/rating"), &admin, json!({"rating": 8.0})).await;
+    assert!(rated.status.is_success(), "{:?}", rated.body);
+
+    use_key(&app, &admin, KEY).await;
+    let after = aliens().await;
+    assert_eq!(after.len(), 1, "one movie: {after:?}");
+    assert_eq!(after[0].0, first, "the first added stays");
+    let movie = app.get(&format!("/api/items/{first}"), &admin).await.body;
+    assert_eq!(movie["tmdb_id"], json!(679));
+    assert_eq!(movie["files"].as_array().map(Vec::len), Some(2), "{movie}");
+    assert_eq!(movie["user_state"]["watched"], json!(true), "{movie}");
+    assert_eq!(movie["user_state"]["rating"], json!(8.0), "{movie}");
+    assert_eq!(movie["in_watchlist"], json!(true), "{movie}");
+    assert_eq!(app.get(&format!("/api/items/{second}"), &admin).await.status, StatusCode::NOT_FOUND);
+
+    // Scanned again, files and all, it stays one movie.
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({"force": true})).await;
+    app.wait_for_scans().await;
+    assert_eq!(aliens().await.len(), 1);
+    let movie = app.get(&format!("/api/items/{first}"), &admin).await.body;
+    assert_eq!(movie["files"].as_array().map(Vec::len), Some(2), "{movie}");
+
+    // Fixed to another title, the copy its name doesn't make goes back to
+    // being a movie of its own, matched by its name.
+    let fixed = app.post(&format!("/api/items/{first}/match"), &admin, json!({"tmdb_id": 8077})).await;
+    assert_eq!(fixed.status, StatusCode::OK, "{:?}", fixed.body);
+    assert_eq!(fixed.body["title"], json!("Alien³"));
+    assert_eq!(fixed.body["files"].as_array().map(Vec::len), Some(1), "{:?}", fixed.body);
+    let split = aliens().await;
+    assert_eq!(split.len(), 1, "{split:?}");
+    let other = app.get(&format!("/api/items/{}", split[0].0), &admin).await.body;
+    assert_eq!((other["tmdb_id"].clone(), other["year"].clone()), (json!(679), json!(1986)), "{other}");
+    assert!(other["files"][0]["path"].as_str().unwrap().contains("1987"), "{other}");
+    // And it stays apart through another scan.
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({"force": true})).await;
+    app.wait_for_scans().await;
+    assert_eq!(app.ids(lib, &admin).await.len(), 4);
+}
