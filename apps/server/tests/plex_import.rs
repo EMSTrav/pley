@@ -1453,7 +1453,7 @@ async fn plex_data_comes_before_metadata_and_titles_found_by_id_after_it() {
             tmdb: format!("{base}/tmdb"),
             tmdb_images: format!("{base}/tmdb-images"),
             opensubtitles: format!("{base}/opensubtitles"),
-            audible: format!("{base}/audible"),
+            audnexus: format!("{base}/audnexus"),
             openlibrary: format!("{base}/ol"),
             openlibrary_covers: format!("{base}/olcovers"),
         });

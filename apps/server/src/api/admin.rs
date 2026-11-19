@@ -142,7 +142,7 @@ pub enum Service {
     Tvdb,
     Tvmaze,
     Musicbrainz,
-    /// Audible and Open Library.
+    /// Audnexus and Open Library.
     Audiobooks,
     Transcoder,
     Opensubtitles,
@@ -155,7 +155,7 @@ impl Service {
             Service::Tvdb => "TheTVDB",
             Service::Tvmaze => "TVmaze",
             Service::Musicbrainz => "MusicBrainz",
-            Service::Audiobooks => "Audible or Open Library",
+            Service::Audiobooks => "Audnexus or Open Library",
             Service::Transcoder => "The transcoder",
             Service::Opensubtitles => "OpenSubtitles",
         }

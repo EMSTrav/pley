@@ -64,7 +64,7 @@ pub struct Settings {
     pub tvdb_pin: String,
     /// Look artists and albums up on MusicBrainz (covers from the Cover Art Archive).
     pub music_metadata: bool,
-    /// Look audiobooks up on Audible, else Open Library
+    /// Look audiobooks up on Open Library, and Audnexus for those with an ASIN
     /// ([`crate::providers::books`]).
     pub book_metadata: bool,
     /// Read the NFO files Kodi, Jellyfin and the like keep next to titles:

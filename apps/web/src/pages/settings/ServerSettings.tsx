@@ -168,7 +168,7 @@ ${form.tvdb_pin}`}
                   <Trans
                     t={t}
                     i18nKey="server.metadata.booksHint"
-                    components={{ audible: <Link href="https://www.audible.com" />, openlibrary: <Link href="https://openlibrary.org" /> }}
+                    components={{ openlibrary: <Link href="https://openlibrary.org" />, audnexus: <Link href="https://audnex.us" /> }}
                   />
                 }
               >

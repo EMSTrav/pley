@@ -5,7 +5,8 @@
 //!   subscriber PIN).
 //! - [`musicbrainz`]: artists and albums, no key needed, with album covers
 //!   from the Cover Art Archive.
-//! - [`books`]: audiobooks from Audible's catalog, else Open Library, no key
+//! - [`books`]: audiobooks from Open Library, and Audnexus for those whose
+//!   files carry an Audible ASIN, no key
 //!   needed.
 //! - [`opensubtitles`]: subtitles to add to a file, with an API key each
 //!   server's administrator gets (see [`crate::subtitles`]).
@@ -59,8 +60,8 @@ pub struct Endpoints {
     pub tmdb_images: String,
     /// OpenSubtitles.com's API (used once its key is set).
     pub opensubtitles: String,
-    /// Audible's catalog, `{tld}` the store's domain ([`books::AUDIBLE`]).
-    pub audible: String,
+    /// Audnexus, which looks audiobooks up by their ASIN.
+    pub audnexus: String,
     pub openlibrary: String,
     pub openlibrary_covers: String,
 }
@@ -75,7 +76,7 @@ impl Default for Endpoints {
             tmdb: crate::metadata::API.into(),
             tmdb_images: crate::metadata::IMAGES.into(),
             opensubtitles: opensubtitles::API.into(),
-            audible: books::AUDIBLE.into(),
+            audnexus: books::AUDNEXUS.into(),
             openlibrary: books::OPEN_LIBRARY.into(),
             openlibrary_covers: books::OPEN_LIBRARY_COVERS.into(),
         }
@@ -162,7 +163,7 @@ pub enum Check<'a> {
     },
     Tvmaze,
     MusicBrainz,
-    /// Audible, in the server's country's store, and Open Library.
+    /// Audnexus and Open Library.
     Books,
 }
 
@@ -178,7 +179,7 @@ pub struct Providers {
 }
 
 impl Providers {
-    /// `endpoints: None` never contacts TVmaze, TheTVDB, MusicBrainz, Audible
+    /// `endpoints: None` never contacts TVmaze, TheTVDB, MusicBrainz, Audnexus
     /// or Open Library.
     pub fn new(db: Db, settings: Arc<SettingsStore>, store: Arc<Store>, endpoints: Option<Endpoints>) -> Self {
         let client = |redirects: bool| {
@@ -206,7 +207,7 @@ impl Providers {
                 )),
                 Some(books::Books::new(
                     client(true),
-                    &e.audible,
+                    &e.audnexus,
                     &e.openlibrary,
                     &e.openlibrary_covers,
                     db.clone(),
@@ -234,25 +235,24 @@ impl Providers {
             Check::Tvdb { key, pin } => self.tvdb.as_ref().ok_or_else(off)?.check(key, pin).await,
             Check::Tvmaze => self.tvmaze.as_ref().ok_or_else(off)?.check().await,
             Check::MusicBrainz => self.musicbrainz.as_ref().ok_or_else(off)?.check().await,
-            Check::Books => self.books.as_ref().ok_or_else(off)?.check(&self.wanted()).await,
+            Check::Books => self.books.as_ref().ok_or_else(off)?.check().await,
         }
     }
 
-    /// Whether audiobooks are looked up on Audible and Open Library.
+    /// Whether audiobooks are looked up on Open Library and Audnexus.
     pub fn books_enabled(&self) -> bool {
         self.books.is_some() && self.settings.get().book_metadata
     }
 
-    /// The store and language books are looked up in.
-    fn wanted(&self) -> books::Wanted {
-        let settings = self.settings.get();
-        books::Wanted { country: crate::ratings::region_in(&settings), language: settings.metadata_language.clone() }
+    /// The country whose Audible region Audnexus is asked in.
+    fn country(&self) -> String {
+        crate::ratings::region_in(&self.settings.get())
     }
 
-    /// Look a book (or a part's book) up on Audible, else Open Library.
+    /// Look a book (or a part's book) up on Audnexus or Open Library.
     pub async fn refresh_book_item(&self, item_id: i64) -> Result<(), ProviderError> {
         match &self.books {
-            Some(books) if self.settings.get().book_metadata => books.refresh_item(item_id, &self.wanted()).await,
+            Some(books) if self.settings.get().book_metadata => books.refresh_item(item_id, &self.country()).await,
             _ => Ok(()),
         }
     }
@@ -267,7 +267,7 @@ impl Providers {
     ) -> anyhow::Result<()> {
         match &self.books {
             Some(books) if self.settings.get().book_metadata => {
-                books.refresh_library(lib, force, &self.wanted(), progress).await
+                books.refresh_library(lib, force, &self.country(), progress).await
             }
             _ => Ok(()),
         }

@@ -69,7 +69,7 @@ const IMAGE_HOSTS: &[&str] = &[
     "assets.fanart.tv",
     "theposterdb.com",
     "raw.githubusercontent.com",
-    // Audible's covers.
+    // Audnexus's covers, Audible's.
     "m.media-amazon.com",
     // Open Library's, which redirect to the Internet Archive.
     "covers.openlibrary.org",
