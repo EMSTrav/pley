@@ -241,9 +241,15 @@ pub(crate) async fn start_watching(
     how.home = if how.take_over.is_some() { state.live.home_now(user.id).await } else { None };
     let channel = state.live.channel(user, id).await?;
     let row = state.live.channel_row(id).await?;
-    let (source_name, max_connections, user_agent) = state.live.source_of(&row).await?;
-    let watching =
-        state.live.tuners.watch(user, Tune { channel: &row, source_name, max_connections, user_agent }, how).await?;
+    // The channel itself first, then its copies on other sources: whichever
+    // has the channel pulled already, or a connection free, plays it.
+    let twins = state.live.twins(&row).await?;
+    let mut tunes = Vec::with_capacity(1 + twins.len());
+    for channel in std::iter::once(&row).chain(&twins) {
+        let (source_name, max_connections, user_agent) = state.live.source_of(channel).await?;
+        tunes.push(Tune { channel, source_name, max_connections, user_agent });
+    }
+    let watching = state.live.tuners.watch(user, &tunes, how).await?;
     state.live.watched(user.id, id).await;
     Ok((watching, channel))
 }

@@ -1080,3 +1080,57 @@ async fn keyed_addresses_open_their_session_alone() {
     assert_eq!(left.status, StatusCode::NO_CONTENT);
     assert_eq!(app.call(Method::GET, &segment, None, None, &[]).await.status, StatusCode::GONE);
 }
+
+/// Two accounts with the same channels and one connection each: a channel
+/// whose own account is busy plays on the other's copy, and whoever asks
+/// for that channel next joins the copy instead of taking a third.
+#[tokio::test]
+async fn a_channel_plays_on_another_source_with_a_connection_free() {
+    let (base, provider) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let (bob, _) = app.user(&admin, "bob", json!({})).await;
+    let (carol, _) = app.user(&admin, "carol", json!({})).await;
+    let url = format!("{base}/list.m3u");
+    for name in ["A", "B"] {
+        let made = app
+            .post("/api/live/sources", &admin, json!({"name": name, "kind": "m3u", "url": url, "max_connections": 1}))
+            .await;
+        assert_eq!(made.status, StatusCode::CREATED, "{:?}", made.body);
+    }
+    for _ in 0..100 {
+        let sources = app.get("/api/live/sources", &admin).await.body;
+        let read = |s: &Value| s["guide_at"].is_i64() && !s["refreshing"].as_bool().unwrap_or(true);
+        if sources.as_array().unwrap().iter().all(read) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let channels = app.get("/api/live/channels", &admin).await.body;
+    let source_a = channels.as_array().unwrap().iter().map(|c| c["source_id"].as_i64().unwrap()).min().unwrap();
+    let on_a = |name: &str| {
+        channels.as_array().unwrap().iter().find(|c| c["name"] == name && c["source_id"] == source_a).unwrap()["id"]
+            .as_i64()
+            .unwrap()
+    };
+    let (one, ten) = (on_a("One"), on_a("Ten"));
+
+    // The administrator takes A's one connection with Ten.
+    let (status, body) = open_stream(&app, &admin, ten, "pc").await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, _ten_reader) = first_bytes(body).await;
+
+    // Bob asks for One on A: it plays, on B's connection.
+    let (status, body) = open_stream(&app, &bob, one, "tv").await;
+    assert_eq!(status, StatusCode::OK, "A is busy, but B has One too");
+    let (first, _bobs_reader) = first_bytes(body).await;
+    assert_eq!(first[4], 1, "One's packets");
+    assert_eq!(provider.open.load(Ordering::SeqCst), 2, "one connection on each account");
+
+    // Carol asks for One on A too: she joins B's tuner.
+    let (status, body) = open_stream(&app, &carol, one, "phone").await;
+    assert_eq!(status, StatusCode::OK);
+    let (first, _carols_reader) = first_bytes(body).await;
+    assert_eq!(first[4], 1);
+    assert_eq!(provider.opened.load(Ordering::SeqCst), 2, "no third connection");
+}

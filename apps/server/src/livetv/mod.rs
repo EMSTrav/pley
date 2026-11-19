@@ -1741,6 +1741,26 @@ impl LiveTv {
             .ok_or_else(|| AppError::not_found(format!("channel {id} not found")))
     }
 
+    /// The same channel on the other enabled sources: their channels with the
+    /// same guide channel (as [`ChannelRow::guide_key`] finds it), hidden ones
+    /// too (an administrator hides the copies to list a channel once), but
+    /// not offline ones. A channel without a guide channel has none.
+    pub(crate) async fn twins(&self, channel: &ChannelRow) -> Result<Vec<ChannelRow>, AppError> {
+        let Some(key) = channel.guide_key() else { return Ok(Vec::new()) };
+        let sql = format!(
+            "SELECT {CHANNEL_COLUMNS} FROM live_channels c JOIN live_sources s ON s.id = c.source_id \
+             WHERE c.source_id != ? AND c.missing_since IS NULL AND c.offline_since IS NULL AND s.enabled = 1 \
+             AND COALESCE(NULLIF(c.custom_guide_id, ''), NULLIF(c.matched_guide_id, ''), NULLIF(c.guide_id, '')) = ? \
+             ORDER BY c.source_id, c.position"
+        );
+        sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(channel.source_id)
+            .bind(key)
+            .fetch_all(&self.db.read)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))
+    }
+
     /// The channel's source: its connection limit and user agent.
     pub(crate) async fn source_of(&self, channel: &ChannelRow) -> Result<(String, i64, String), AppError> {
         let s = self.source_row(channel.source_id).await?;

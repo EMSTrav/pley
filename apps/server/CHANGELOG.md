@@ -26,6 +26,8 @@ describes how they are made.
   off in Settings → Server.
 - A Live TV channel its source's guide lacks can take a guide of its own:
   the address of an XMLTV guide, in its Guide channel in the lineup.
+- A Live TV channel whose source has all its connections in use plays on
+  another source that has the same channel and a connection free.
 
 ### Changed
 
