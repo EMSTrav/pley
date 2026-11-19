@@ -536,6 +536,16 @@ pub async fn patch_channels(
     if req.ids.len() > 20_000 || req.groups.len() > 5_000 {
         return Err(AppError::bad_request("too many channels at once"));
     }
+    if let Some(guide) = req.patch.guide_id.as_deref().map(str::trim) {
+        if guide.len() > 2048 {
+            return Err(AppError::bad_request("the guide channel is longer than 2,048 characters"));
+        }
+        // A guide of its own is read from the web only, never a file here.
+        let looks_like_address = guide.contains("://") || guide.starts_with('/');
+        if looks_like_address && !crate::livetv::is_guide_address(guide) {
+            return Err(AppError::bad_request("a channel's own guide is an http:// or https:// address"));
+        }
+    }
     let mut ids = req.ids;
     if !req.groups.is_empty() {
         ids.extend(state.live.group_channels(&req.groups).await?);

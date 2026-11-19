@@ -341,6 +341,7 @@
       "guideHintSource": "Its id in the guide (XMLTV). Empty: the source's, {{id}}.",
       "guideHintMatched": "Its id in the guide (XMLTV). Empty: {{id}}, the guide's channel that matches it.",
       "guideHintNone": "Its id in the guide (XMLTV): the source names none, and none goes by its name.",
+      "guideAddress": "Or, for a channel the source's guide lacks, the address of an XMLTV guide of its own (https://…).",
       "note": "A new guide channel shows its programs once the guide is read again."
     },
     "account": {

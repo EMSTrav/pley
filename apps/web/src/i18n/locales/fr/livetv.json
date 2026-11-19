@@ -366,6 +366,7 @@
       "guideHintSource": "Son identifiant dans le guide (XMLTV). Vide : celui de la source, {{id}}.",
       "guideHintMatched": "Son identifiant dans le guide (XMLTV). Vide : {{id}}, la chaîne du guide qui lui correspond.",
       "guideHintNone": "Son identifiant dans le guide (XMLTV) : la source n’en donne aucun, et aucun ne correspond à son nom.",
+      "guideAddress": "Ou, pour une chaîne absente du guide de la source, l’adresse d’un guide XMLTV qui lui est propre (https://…).",
       "note": "Une nouvelle chaîne du guide affiche ses programmes une fois le guide actualisé."
     },
     "account": {

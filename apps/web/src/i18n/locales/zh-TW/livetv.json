@@ -316,6 +316,7 @@
       "guideHintSource": "其在節目指南 (XMLTV) 中的 ID。留空則使用來源中的 {{id}}。",
       "guideHintMatched": "其在節目指南 (XMLTV) 中的 ID。留空則使用 {{id}}，即節目指南中與之匹配的頻道。",
       "guideHintNone": "其在節目指南 (XMLTV) 中的 ID：來源未提供，也沒有按名稱匹配到頻道。",
+      "guideAddress": "或者，對於來源指南中缺少的頻道，填寫其專用 XMLTV 指南的網址（https://…）。",
       "note": "重新讀取節目指南後，新的指南頻道才會顯示其節目。"
     },
     "account": {
