@@ -120,6 +120,8 @@ struct WorkDoc {
     first_publish_year: Option<i64>,
     #[serde(deserialize_with = "loose_id")]
     cover_i: Option<i64>,
+    #[serde(deserialize_with = "loose_id")]
+    edition_count: Option<i64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -420,7 +422,7 @@ impl Books {
                 let mut query = vec![
                     ("title", title.as_str()),
                     ("limit", "10"),
-                    ("fields", "key,title,subtitle,author_name,first_publish_year,cover_i"),
+                    ("fields", "key,title,subtitle,author_name,first_publish_year,cover_i,edition_count"),
                 ];
                 if let Some(author) = book.authors.first() {
                     query.push(("author", author.as_str()));
@@ -603,13 +605,18 @@ fn sequence(value: Option<&str>) -> Option<f64> {
 }
 
 /// The Open Library work for a book: the same title (or one holding the
-/// other), by one of its writers when it names any.
+/// other), by one of its writers when it names any. Among works of the
+/// same name, the one with the most editions: the book itself, not a
+/// translation or an adaptation catalogued apart.
 fn best_work(docs: Vec<WorkDoc>, book: &Book) -> Option<WorkDoc> {
     let wanted = clean_title(&book.title);
     let mut best: Option<(f64, WorkDoc)> = None;
     for doc in docs {
         let full = doc.subtitle.as_deref().map(|s| format!("{}: {s}", doc.title));
-        let mut score = title_score(&wanted, std::iter::once(doc.title.as_str()).chain(full.as_deref()));
+        // "Frankenstein; or, The Modern Prometheus" is "Frankenstein".
+        let main = doc.title.split([';', ':']).next().map(str::trim).filter(|m| *m != doc.title);
+        let titles = std::iter::once(doc.title.as_str()).chain(full.as_deref()).chain(main);
+        let mut score = title_score(&wanted, titles);
         if score == 0.0 || !is_work_id(doc.key.trim_start_matches("/works/")) {
             continue;
         }
@@ -619,10 +626,11 @@ fn best_work(docs: Vec<WorkDoc>, book: &Book) -> Option<WorkDoc> {
             }
             score += 2.0;
         }
-        // A work with a cover is the edition people know.
+        // A work with a cover, and many editions, is the one people know.
         if doc.cover_i.is_some() {
             score += 0.5;
         }
+        score += (doc.edition_count.unwrap_or(0).max(0) as f64 + 1.0).log10();
         if best.as_ref().is_none_or(|(b, _)| score > *b) {
             best = Some((score, doc));
         }
@@ -651,7 +659,8 @@ fn genres(found: &[Genre]) -> Vec<String> {
 }
 
 /// Open Library's description as plain text: without the links and the
-/// "([source][1])" notes contributors add below it.
+/// "([source][1])" notes contributors add below it, or Markdown's
+/// `*emphasis*`.
 fn clean_description(text: &str) -> String {
     let mut lines: Vec<&str> = Vec::new();
     for line in text.lines() {
@@ -662,7 +671,7 @@ fn clean_description(text: &str) -> String {
         }
         lines.push(line);
     }
-    strip_html(&lines.join("\n"))
+    strip_html(&lines.join("\n").replace('*', ""))
 }
 
 /// An Amazon/Audible id: ten letters and digits ("B08G9PRS1K").
@@ -768,6 +777,16 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(best_work(docs, &book("Small Hours", &["Imogen Vale"])).unwrap().key, "/works/OL3W");
+        // The work itself, under its full title, over a later one of the
+        // same short name with fewer editions.
+        let docs: Vec<WorkDoc> = serde_json::from_value(serde_json::json!([
+            {"key": "/works/OL7W", "title": "Small Hours", "author_name": ["Imogen Vale"], "cover_i": 1,
+             "edition_count": 40},
+            {"key": "/works/OL6W", "title": "Small Hours; or, A Porter's Year", "author_name": ["Imogen Vale"],
+             "cover_i": 2, "edition_count": 900}
+        ]))
+        .unwrap();
+        assert_eq!(best_work(docs, &book("Small Hours", &["Imogen Vale"])).unwrap().key, "/works/OL6W");
         let other: Vec<WorkDoc> = serde_json::from_value(serde_json::json!([
             {"key": "/works/OL5W", "title": "Small Hours", "author_name": ["Someone Else"]}
         ]))
@@ -783,6 +802,7 @@ mod tests {
             ),
             "A keeper's tale."
         );
+        assert_eq!(clean_description("*Small Hours* is a **quiet** novel."), "Small Hours is a quiet novel.");
         let typed: Work = serde_json::from_str(r#"{"description": {"type": "/type/text", "value": "Text."}}"#).unwrap();
         assert_eq!(typed.description.unwrap().text(), "Text.");
         let plain: Work = serde_json::from_str(r#"{"description": "Plain."}"#).unwrap();
