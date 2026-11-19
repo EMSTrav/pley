@@ -159,6 +159,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A library's page on Apple TV has more room: its top scrolls away with the titles, the
   letters run down the right of the screen, and the posters fill its width.
 - Apple TV's pages leave less empty space at their sides.
+- Apple TV's Settings tab, with Switch profile and Sign out, no longer scrolls off the end of
+  a crowded tab bar: Playlists and the tabs after it show their symbol alone until it fits.
 - A library's Recommended tab no longer ends with a row of every collection.
 - Requests: a sign-in from before the app could ask says "Sign in again to ask for movies
   and shows" without a second line, and its button reads Sign in.
