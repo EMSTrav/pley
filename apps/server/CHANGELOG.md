@@ -30,6 +30,9 @@ describes how they are made.
 
 ### Changed
 
+- The web app's sidebar lists Playlists as one more row under the
+  libraries, opening the page of all your playlists, in place of a section
+  of its own.
 - The Franchises category of collections is Box sets, and its key in the
   API is `box_sets`.
 
@@ -40,6 +43,8 @@ describes how they are made.
   versions once both are matched to the same TMDB title, keeping what was
   watched, rated and listed of either. Fix Match on it separates them
   again, and they stay apart.
+- Videos whose AAC sound is copied from an MPEG-TS or AVI file play on the
+  Apple apps instead of failing with "Malformed AAC bitstream".
 - Films and shows with accents in their names are matched when the names
   came from a Mac. Ones already scanned are matched by the library's Force
   full rescan.
