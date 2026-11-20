@@ -8,6 +8,8 @@ describes how they are made.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-11-20
+
 ### Added
 
 - Choose Simplified Chinese (简体中文) or Traditional Chinese (繁體中文) as
@@ -892,7 +894,8 @@ On Android TV:
 - First release with a version of its own (builds before it carried 0.2.0,
   the version every app shared).
 
-[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-18...HEAD
+[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-20...HEAD
+[0.1.16]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-20
 [0.1.15]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-18
 [0.1.14]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-16
 [0.1.13]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-14
