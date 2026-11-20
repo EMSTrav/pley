@@ -50,6 +50,8 @@
     "noChannelsTitle": "No channels yet",
     "noChannelsHint": "Channels appear here once an administrator adds an IPTV provider.",
     "setUp": "Set up Live TV",
+    "hideCategories": "Hide categories",
+    "showCategories": "Show categories",
     "view": "View",
     "guide": "Guide",
     "resultsFor": "Results for “{{search}}”",

@@ -48,6 +48,8 @@
     "noChannelsTitle": "暫無頻道",
     "noChannelsHint": "管理員新增 IPTV 服務商後，頻道會顯示在這裡。",
     "setUp": "設定直播電視",
+    "hideCategories": "隱藏頻道分組",
+    "showCategories": "顯示頻道分組",
     "view": "檢視",
     "guide": "節目指南",
     "resultsFor": "“{{search}}”的搜尋結果",

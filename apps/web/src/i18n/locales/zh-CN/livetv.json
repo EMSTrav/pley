@@ -48,6 +48,8 @@
     "noChannelsTitle": "暂无频道",
     "noChannelsHint": "管理员添加 IPTV 服务商后，频道会显示在这里。",
     "setUp": "设置直播电视",
+    "hideCategories": "隐藏频道分组",
+    "showCategories": "显示频道分组",
     "view": "查看",
     "guide": "节目指南",
     "resultsFor": "“{{search}}”的搜索结果",

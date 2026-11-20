@@ -52,6 +52,8 @@
     "noChannelsTitle": "Aucune chaîne pour l’instant",
     "noChannelsHint": "Les chaînes apparaissent ici dès qu’un administrateur ajoute un fournisseur IPTV.",
     "setUp": "Configurer la TV en direct",
+    "hideCategories": "Masquer les catégories",
+    "showCategories": "Afficher les catégories",
     "view": "Affichage",
     "guide": "Guide des programmes",
     "resultsFor": "Résultats pour « {{search}} »",

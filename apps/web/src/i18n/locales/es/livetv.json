@@ -52,6 +52,8 @@
     "noChannelsTitle": "Aún no hay canales",
     "noChannelsHint": "Los canales aparecen aquí cuando un administrador añade un proveedor de IPTV.",
     "setUp": "Configurar TV en vivo",
+    "hideCategories": "Ocultar categorías",
+    "showCategories": "Mostrar categorías",
     "view": "Vista",
     "guide": "Guía",
     "resultsFor": "Resultados para “{{search}}”",
