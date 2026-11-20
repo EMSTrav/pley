@@ -213,10 +213,18 @@ pub async fn split(db: &Db, lib: &LibraryRow, movie: i64) -> sqlx::Result<Vec<i6
             leaving.push((id, path.to_string_lossy().into_owned(), root));
         }
     }
-    // A movie none of whose files make its key keeps its first one, and
-    // with it what people did with it.
+    // A movie none of whose files make its key (its own copy went) keeps its
+    // first one, and with it what people did with it. That file's key stays
+    // its alias, or the next scan of the file would make it a movie again
+    // and leave this one without files, to be removed.
     if !stays && !leaving.is_empty() {
-        leaving.remove(0);
+        let (_, path, root) = leaving.remove(0);
+        sqlx::query("INSERT OR REPLACE INTO item_aliases (library_id, key, item_id) VALUES (?, ?, ?)")
+            .bind(lib.id)
+            .bind(movie_key(Path::new(&path), &root))
+            .bind(movie)
+            .execute(&mut *tx)
+            .await?;
     }
     let mut made = Vec::new();
     for (file, path, root) in leaving {

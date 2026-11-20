@@ -769,7 +769,9 @@ async fn copies_matched_to_the_same_title_are_one_movie() {
     assert_eq!(movie["in_watchlist"], json!(true), "{movie}");
     assert_eq!(app.get(&format!("/api/items/{second}"), &admin).await.status, StatusCode::NOT_FOUND);
 
-    // Scanned again, files and all, it stays one movie.
+    // Scanned again, the other copy written again as it changed (a forced
+    // scan with no transcoder leaves unchanged files be), it stays one movie.
+    app.media_file("movies/Aliens (1987) 2160p.mkv", 4096);
     app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({"force": true})).await;
     app.wait_for_scans().await;
     assert_eq!(aliens().await.len(), 1);
@@ -841,4 +843,47 @@ async fn a_copy_let_go_stays_apart_until_its_match_is_fixed() {
     assert_eq!(fixed.body["files"].as_array().map(Vec::len), Some(2), "{:?}", fixed.body);
     assert_eq!(aliens().await, [movie]);
     assert_eq!(app.get(&format!("/api/items/{copy}"), &admin).await.status, StatusCode::NOT_FOUND);
+}
+
+/// A merged movie whose own copy went (an upgrade replaced it) keeps the
+/// copy left, and what was done with it, through a fix of its match and a
+/// scan that writes that copy again.
+#[tokio::test]
+async fn a_merged_movie_whose_own_copy_went_keeps_the_other() {
+    let (app, _tmdb, admin, lib) = world().await;
+    app.media_file("movies/Aliens (1987) 2160p.mkv", 2048);
+    use_key(&app, &admin, KEY).await;
+    let aliens = || async {
+        let page = app.get(&format!("/api/libraries/{lib}/items"), &admin).await.body;
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["title"] == "Aliens")
+            .map(|i| i["id"].as_i64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    let merged = aliens().await;
+    assert_eq!(merged.len(), 1, "{merged:?}");
+    let movie = merged[0];
+    assert_eq!(
+        app.post(&format!("/api/items/{movie}/watched"), &admin, json!({})).await.status,
+        StatusCode::NO_CONTENT
+    );
+    std::fs::remove_file(app.media_path("movies/Aliens (1986).mkv")).unwrap();
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({})).await;
+    app.wait_for_scans().await;
+    assert_eq!(aliens().await, [movie]);
+
+    let fixed = app.post(&format!("/api/items/{movie}/match"), &admin, json!({"tmdb_id": 679})).await;
+    assert_eq!(fixed.status, StatusCode::OK, "{:?}", fixed.body);
+    assert_eq!(fixed.body["files"].as_array().map(Vec::len), Some(1), "{:?}", fixed.body);
+    // The copy left changes, so the scan writes it again.
+    app.media_file("movies/Aliens (1987) 2160p.mkv", 4096);
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({})).await;
+    app.wait_for_scans().await;
+    assert_eq!(aliens().await, [movie]);
+    let item = app.get(&format!("/api/items/{movie}"), &admin).await.body;
+    assert_eq!(item["user_state"]["watched"], json!(true), "{item}");
+    assert!(item["files"][0]["path"].as_str().unwrap().contains("1987"), "{item}");
 }

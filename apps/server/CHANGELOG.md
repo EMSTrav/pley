@@ -48,7 +48,8 @@ describes how they are made.
   TMDB corrects a film after the first copy was named, are one movie with
   versions once both are matched to the same TMDB title, keeping what was
   watched, rated and listed of either. Fix Match on it separates them
-  again, and they stay apart.
+  again, and they stay apart. In the web app, Fix Match on a copy that
+  goes into another opens that movie.
 - Videos whose AAC sound is copied from an MPEG-TS or AVI file play on the
   Apple apps instead of failing with "Malformed AAC bitstream".
 - Films and shows with accents in their names are matched when the names

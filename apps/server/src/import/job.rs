@@ -1436,6 +1436,9 @@ impl Run {
         self.check(&choices, &sections).await?;
         let paired = self.libraries(&choices, &sections).await?;
         self.paired = paired.iter().map(|p| p.library_id).collect();
+        // Scans don't merge copies of a movie (a title's id going) while what
+        // was done with the titles found is brought; the fetch's scan does.
+        let merges_held = self.state.scanner.hold_merges(&self.paired);
         // Profiles come with their limits before anything else, so a
         // child's is never open while the rest runs, or if it stops.
         let people = self.people(&choices, &sections, &paired, &folders).await?;
@@ -1461,6 +1464,7 @@ impl Run {
         if all_found {
             self.importer.set(&self.state, self.admin, |p| p.steps.retain(|r| r.step != Step::MatchingAgain));
         }
+        drop(merges_held);
         self.fetch(&paired).await?;
         if all_found {
             return Ok(());
