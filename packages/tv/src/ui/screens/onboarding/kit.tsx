@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import qrcode from "qrcode-generator";
-import { currentLanguage, LANGUAGES, systemLanguage, t, type Language } from "../../../i18n";
+import { currentLanguage, LANGUAGES, languageMark, systemLanguage, t, type Language } from "../../../i18n";
 import { useUi } from "../../context";
 import { PanelRow } from "../../kit/buttons";
 import type { Dir } from "../../focus";
@@ -46,7 +46,7 @@ export function PleyLogo(p: { height: number }) {
 
 /**
  * The globe of the screens before signing in (the web's LanguagePicker): a
- * small plain globe and the language shown, by its two letters ("FR"), heard by
+ * small plain globe and the language shown, by its two letters ("FR") or 简 or 繁, heard by
  * its name; OK opens {@link LanguagePanel}. A row of its own, at the bottom
  * right of Choose your server and the address screen, at the top right on the
  * logo's line on the sign-in code, so the remote reaches it from the buttons.
@@ -58,7 +58,7 @@ export function LanguageGlobe(p: { onOpen: () => void; class?: string }) {
     <G kind="row" class={p.class}>
       <F class="text-btn link t-caption globe-btn" fid="language-globe" label={`${t("onboarding.language.choose")}, ${name}`} onSelect={p.onOpen}>
         <Icon name="globe" size={16} />
-        <span lang={shown}>{shown.toUpperCase()}</span>
+        <span lang={shown}>{languageMark(shown)}</span>
       </F>
     </G>
   );
