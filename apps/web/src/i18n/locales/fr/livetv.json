@@ -260,6 +260,8 @@
       "connections": "Connexions",
       "connectionsHint": "0 : sans limite",
       "connectionsNote": "<strong>Connexions</strong> : le nombre de chaînes que le fournisseur permet au compte de lire à la fois. Tous ceux qui regardent la même chaîne en partagent une ; une chaîne que personne ne regarde libère sa connexion au bout de quelques secondes.",
+      "sortGroups": "Trier ses groupes de A à Z",
+      "sortGroupsHint": "Toutes les applications les affichent ainsi. Désactivé : l’ordre du fournisseur.",
       "advanced": "Avancé",
       "userAgent": "Agent utilisateur",
       "userAgentHint": "Certains fournisseurs ne diffusent que vers l’application qu’ils nomment (VLC, par exemple). Vide : celui de Pley.",

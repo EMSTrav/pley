@@ -238,6 +238,8 @@
       "connections": "連線",
       "connectionsHint": "0：無限制",
       "connectionsNote": "<strong>連線</strong>是服務商允許該帳戶同時播放的頻道數。觀看同一頻道的人共享一個連線；無人觀看的頻道會在幾秒後釋放連線。",
+      "sortGroups": "依 A 到 Z 排序分組",
+      "sortGroupsHint": "所有應用程式都依此順序顯示。關閉則依服務商的順序。",
       "advanced": "高階",
       "userAgent": "使用者代理",
       "userAgentHint": "有些服務商只允許其指定的應用播放（例如 VLC）。留空則使用 Pley 自己的。",

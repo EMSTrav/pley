@@ -4576,7 +4576,7 @@ household) or `admins`; profiles with an age limit only with `age_limited`;
 |---|---|---|---|
 | GET | `/api/live` | `library` | `{ available, allowed, channels, sources, recent: Id[] }`: whether to show Live TV (`allowed`: open to this account; `available`: and it has channels), the channel count, the sources set up (administrators; else 0) and the 12 channels watched last, newest first |
 | GET | `/api/live/channels` | `library` | `LiveChannel[]`, the shown channels by number, each with what's on now and next |
-| GET | `/api/live/groups` | `library` | `{ total, favorites, recent, groups: LiveGroup[] }`: the groups in the lineup's order, and how many channels in all, marked and watched lately |
+| GET | `/api/live/groups` | `library` | `{ total, favorites, recent, groups: LiveGroup[] }`: the groups in the lineup's order (each source's as its provider gives them, or A to Z where it has `sort_groups`), and how many channels in all, marked and watched lately |
 | GET | `/api/live/browse` | `library` | `?category=all\|favorites\|recent\|group&group=&q=&offset=&limit=&around=` → `{ total, offset, channels: LiveChannel[] }`: a page (100 by default, 500 at most) of a category's channels matching `q` as search finds them (by name, slips too, a number's beginning, or the title of what's on), the closest first as in search (`recent` keeps the order they were watched); `around` gives the page with that channel in it |
 | GET | `/api/live/channels/{id}` | `library` | `LiveChannel` |
 | GET | `/api/live/channels/{id}/logo` | `library` | the logo, kept a week at a time (no larger than 1 MB and 400 px; one drawn dark on a see-through background is made light, for dark screens); `?w=` resizes it, a see-through one staying see-through |
@@ -4631,6 +4631,7 @@ interface LiveSourceInput {
   username?: string; password?: string; // Xtream
   guide_url?: string;                  // XMLTV: a web address, or a file on this computer (/…, file://…), not a share; empty: the playlist's own (an http(s) address), or Xtream's
   user_agent?: string; max_connections?: number /* 1 */; enabled?: boolean /* true */;
+  sort_groups?: boolean /* false */;  // its groups listed A to Z, by every app, not in the provider's order
 }
 interface LiveSource extends Omit<LiveSourceInput, "password"> {
   id: Id; uid: string;                 // uid: its short id, as in LiveChannel.source_uid

@@ -238,6 +238,8 @@
       "connections": "连接",
       "connectionsHint": "0：无限制",
       "connectionsNote": "<strong>连接</strong>是服务商允许该账户同时播放的频道数。观看同一频道的人共享一个连接；无人观看的频道会在几秒后释放连接。",
+      "sortGroups": "按 A 到 Z 排序分组",
+      "sortGroupsHint": "所有应用都按此顺序显示。关闭则按服务商的顺序。",
       "advanced": "高级",
       "userAgent": "用户代理",
       "userAgentHint": "有些服务商只允许其指定的应用播放（例如 VLC）。留空则使用 Pley 自己的。",

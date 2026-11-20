@@ -249,6 +249,8 @@
       "connections": "Connections",
       "connectionsHint": "0: no limit",
       "connectionsNote": "<strong>Connections</strong> is how many channels the provider lets the account play at once. Everyone watching the same channel shares one; a channel nobody watches gives its connection back after a few seconds.",
+      "sortGroups": "Sort its groups A to Z",
+      "sortGroupsHint": "Every app lists them this way. Off: the provider's order.",
       "advanced": "Advanced",
       "userAgent": "User agent",
       "userAgentHint": "Some providers play only to the app they name (VLC, say). Empty: Pley's own.",

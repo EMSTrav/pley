@@ -83,6 +83,8 @@ In the web and desktop apps only, for now.
   connection when its own source's are all in use.
 - Channels play straight from the provider when the device can, through
   the transcoder when it can't.
+- Groups in the provider's order, or A to Z for a provider that lists them
+  in none.
 
 ## Watching
 

@@ -187,6 +187,8 @@ pub struct Source {
     pub user_agent: String,
     pub max_connections: i64,
     pub enabled: bool,
+    /// Its groups listed A to Z, not in the provider's order.
+    pub sort_groups: bool,
     pub created_at: i64,
     pub channels_at: Option<i64>,
     pub channels_error: Option<String>,
@@ -222,6 +224,8 @@ pub struct SourceInput {
     pub max_connections: i64,
     #[serde(default = "yes")]
     pub enabled: bool,
+    #[serde(default)]
+    pub sort_groups: bool,
 }
 
 fn one() -> i64 {
@@ -254,6 +258,7 @@ struct SourceRow {
     user_agent: String,
     max_connections: i64,
     enabled: bool,
+    sort_groups: bool,
     created_at: i64,
     channels_at: Option<i64>,
     channels_error: Option<String>,
@@ -528,13 +533,15 @@ pub(crate) struct Lineup {
     shown: Vec<bool>,
     /// Each channel's name and number in lower case, for finding it.
     names: Vec<String>,
-    /// The groups of the channels shown, in the lineup's order.
+    /// The groups of the channels shown, as lists show them ([`arrange_groups`]).
     groups: Vec<Group>,
     /// The guide's channels (by source) with programs to come, as the
     /// lineup was read: the guide is read again only with a change.
     guided: HashSet<(i64, String)>,
     /// Each source's short id, by source.
     source_uids: HashMap<i64, String>,
+    /// The sources whose groups are listed A to Z.
+    sorted: HashSet<i64>,
     /// The names as search finds them, made when first searched.
     search: std::sync::OnceLock<crate::search::Names>,
 }
@@ -1048,6 +1055,7 @@ impl LiveTv {
                     user_agent: r.user_agent,
                     max_connections: r.max_connections,
                     enabled: r.enabled,
+                    sort_groups: r.sort_groups,
                     created_at: r.created_at,
                     channels_at: r.channels_at,
                     channels_error: r.channels_error,
@@ -1103,7 +1111,7 @@ impl LiveTv {
         };
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO live_sources (uid, name, kind, url, username, password, guide_url, user_agent, \
-             max_connections, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+             max_connections, enabled, sort_groups, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(new_source_uid())
         .bind(input.name.trim())
@@ -1115,6 +1123,7 @@ impl LiveTv {
         .bind(input.user_agent.trim())
         .bind(input.max_connections)
         .bind(input.enabled)
+        .bind(input.sort_groups)
         .bind(now())
         .fetch_one(&self.db.write)
         .await
@@ -1139,7 +1148,7 @@ impl LiveTv {
             || (input.enabled && !before.enabled);
         sqlx::query(
             "UPDATE live_sources SET name = ?, kind = ?, url = ?, username = ?, password = ?, guide_url = ?, \
-             user_agent = ?, max_connections = ?, enabled = ? WHERE id = ?",
+             user_agent = ?, max_connections = ?, enabled = ?, sort_groups = ? WHERE id = ?",
         )
         .bind(input.name.trim())
         .bind(input.kind.as_str())
@@ -1150,6 +1159,7 @@ impl LiveTv {
         .bind(input.user_agent.trim())
         .bind(input.max_connections)
         .bind(input.enabled)
+        .bind(input.sort_groups)
         .bind(id)
         .execute(&self.db.write)
         .await
@@ -1213,6 +1223,7 @@ impl LiveTv {
             user_agent: input.user_agent.trim().into(),
             max_connections: input.max_connections,
             enabled: true,
+            sort_groups: input.sort_groups,
             created_at: now(),
             channels_at: None,
             channels_error: None,
@@ -1825,15 +1836,18 @@ impl LiveTv {
         let names = rows.iter().map(|c| c.display_name().to_lowercase()).collect();
         let hide_offline = self.settings().hide_offline;
         let shown: Vec<bool> = rows.iter().map(|c| !c.hidden && !(hide_offline && c.offline())).collect();
-        let mut groups: Vec<Group> = Vec::new();
+        let sources = self.source_rows().await.map_err(|e| AppError::Internal(e.into()))?;
+        let sorted: HashSet<i64> = sources.iter().filter(|s| s.sort_groups).map(|s| s.id).collect();
+        let mut groups: Vec<(i64, Group)> = Vec::new();
         let mut index: HashMap<&str, usize> = HashMap::new();
         for c in rows.iter().zip(&shown).filter(|(c, shown)| **shown && !c.group_name.is_empty()).map(|(c, _)| c) {
             let at = *index.entry(&c.group_name).or_insert_with(|| {
-                groups.push(Group::new(&c.group_name));
+                groups.push((c.source_id, Group::new(&c.group_name)));
                 groups.len() - 1
             });
-            groups[at].count += 1;
+            groups[at].1.count += 1;
         }
+        let groups = arrange_groups(groups, |g| &g.name, &sorted);
         let guided =
             sqlx::query_as::<_, (i64, String)>("SELECT DISTINCT source_id, guide_id FROM live_programs WHERE stop > ?")
                 .bind(now())
@@ -1842,14 +1856,9 @@ impl LiveTv {
                 .map_err(|e| AppError::Internal(e.into()))?
                 .into_iter()
                 .collect();
-        let source_uids = self
-            .source_rows()
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
-            .into_iter()
-            .map(|s| (s.id, s.uid))
-            .collect();
-        let lineup = Arc::new(Lineup { rows, shown, names, groups, guided, source_uids, search: Default::default() });
+        let source_uids = sources.into_iter().map(|s| (s.id, s.uid)).collect();
+        let lineup =
+            Arc::new(Lineup { rows, shown, names, groups, guided, source_uids, sorted, search: Default::default() });
         let mut kept = self.lineup.lock();
         // A change while it was read: this one is already out of date.
         if self.generation.load(Ordering::SeqCst) == generation {
@@ -2284,18 +2293,19 @@ impl LiveTv {
     /// Every group, hidden channels' too, with how many of each are hidden.
     pub async fn admin_groups(&self) -> Result<Vec<AdminGroup>, AppError> {
         let lineup = self.lineup().await?;
-        let mut groups: Vec<AdminGroup> = Vec::new();
+        let mut groups: Vec<(i64, AdminGroup)> = Vec::new();
         let mut index: HashMap<&str, usize> = HashMap::new();
         for c in &lineup.rows {
             let at = *index.entry(&c.group_name).or_insert_with(|| {
-                groups.push(AdminGroup { group: Group::new(&c.group_name), hidden: 0, offline: 0 });
+                groups.push((c.source_id, AdminGroup { group: Group::new(&c.group_name), hidden: 0, offline: 0 }));
                 groups.len() - 1
             });
-            groups[at].group.count += 1;
-            groups[at].hidden += usize::from(c.hidden);
-            groups[at].offline += usize::from(c.offline());
+            let group = &mut groups[at].1;
+            group.group.count += 1;
+            group.hidden += usize::from(c.hidden);
+            group.offline += usize::from(c.offline());
         }
-        Ok(groups)
+        Ok(arrange_groups(groups, |g| &g.group.name, &lineup.sorted))
     }
 
     /// The channels in groups `names`, hidden ones too.
@@ -2566,6 +2576,26 @@ fn channel_rank(search: &str, name: &str, number: Option<&str>) -> u8 {
     }
     let rank = crate::search::match_rank(search, name);
     split_region(name).map_or(rank, |(_, rest)| rank.min(crate::search::match_rank(search, rest)))
+}
+
+/// Groups as every list shows them, each with the source it first comes
+/// from: the sources' in the lineup's order, each source's in its
+/// provider's order, or A to Z where it says so (`sort_groups`). A to Z
+/// reads past a name's leading marks ("|UK| Sport" with "UK| News") and
+/// takes numbers as numbers ("Sports 2" before "Sports 10").
+fn arrange_groups<T>(groups: Vec<(i64, T)>, name: impl Fn(&T) -> &str, sorted: &HashSet<i64>) -> Vec<T> {
+    let mut keyed: Vec<_> = groups
+        .into_iter()
+        .enumerate()
+        .map(|(at, (source, group))| {
+            let key = sorted.contains(&source).then(|| {
+                crate::library::parse::natural_key(name(&group).trim_start_matches(|c: char| !c.is_alphanumeric()))
+            });
+            ((source, key, at), group)
+        })
+        .collect();
+    keyed.sort_by(|(a, _), (b, _)| a.cmp(b));
+    keyed.into_iter().map(|(_, group)| group).collect()
 }
 
 /// A group name's region and the rest, when it begins with one the way
@@ -3042,6 +3072,31 @@ mod tests {
         assert_eq!(normalize("Sky Sports F1 FHD"), "skysportsf1");
         assert_eq!(normalize("HD"), "hd");
         assert_eq!(redact("http://x/live/me/secret/1.ts", "secret"), "http://x/live/me/••••/1.ts");
+    }
+
+    #[test]
+    fn a_source_can_have_its_groups_a_to_z() {
+        let groups = |names: &[(i64, &'static str)]| names.iter().map(|&(s, n)| (s, n)).collect::<Vec<_>>();
+        let listed = groups(&[
+            (1, "US Sports"),
+            (1, "Canada News"),
+            (1, "|UK| Sport"),
+            (1, "Sports 10"),
+            (1, "US News"),
+            (1, "sports 2"),
+            (2, "Zed"),
+            (2, "Alpha"),
+        ]);
+        assert_eq!(
+            arrange_groups(listed.clone(), |n| n, &HashSet::from([1])),
+            ["Canada News", "sports 2", "Sports 10", "|UK| Sport", "US News", "US Sports", "Zed", "Alpha"],
+            "the first source's A to Z, the second's as its provider gives them"
+        );
+        assert_eq!(
+            arrange_groups(listed.clone(), |n| n, &HashSet::new()),
+            listed.iter().map(|(_, n)| *n).collect::<Vec<_>>(),
+            "the provider's order"
+        );
     }
 
     #[test]

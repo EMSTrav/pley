@@ -934,6 +934,52 @@ async fn a_link_signed_in_by_the_cookie_takes_no_connection_over() {
 }
 
 #[tokio::test]
+async fn a_source_can_list_its_groups_a_to_z() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    // A provider that gives its groups in no order.
+    let playlist = ["US Sports", "Canada News", "US News", "Canada Sports"]
+        .iter()
+        .enumerate()
+        .map(|(i, group)| {
+            format!("#EXTINF:-1 tvg-chno=\"{i}\" group-title=\"{group}\",Channel {i}\n{base}/live/{i}.ts\n")
+        })
+        .fold(String::from("#EXTM3U\n"), |list, entry| list + &entry);
+    let provider = Router::new().route("/list.m3u", get(move || async move { playlist }));
+    tokio::spawn(async move { axum::serve(listener, provider).await.unwrap() });
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let (bob, _) = app.user(&admin, "bob", json!({})).await;
+    let input = json!({"name": "P", "kind": "m3u", "url": format!("{base}/list.m3u"), "max_connections": 0});
+    let added = app.post("/api/live/sources", &admin, input.clone()).await;
+    assert_eq!(added.body["sort_groups"], false, "the provider's order unless asked");
+    let id = added.body["id"].as_i64().unwrap();
+    // Its channels read: it has no guide to wait for.
+    for _ in 0..100 {
+        let source = &app.get("/api/live/sources", &admin).await.body[0];
+        if source["channels_at"].is_i64() && source["refreshing"] == false {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let groups = |list: &Value| -> Vec<String> {
+        list.as_array().unwrap().iter().map(|g| g["name"].as_str().unwrap().to_owned()).collect()
+    };
+    assert_eq!(
+        groups(&app.get("/api/live/groups", &bob).await.body["groups"]),
+        ["US Sports", "Canada News", "US News", "Canada Sports"]
+    );
+
+    let mut sorted = input;
+    sorted["sort_groups"] = json!(true);
+    let saved = app.put(&format!("/api/live/sources/{id}"), &admin, sorted).await;
+    assert_eq!((saved.status, &saved.body["sort_groups"]), (StatusCode::OK, &json!(true)), "{:?}", saved.body);
+    let a_to_z = ["Canada News", "Canada Sports", "US News", "US Sports"];
+    assert_eq!(groups(&app.get("/api/live/groups", &bob).await.body["groups"]), a_to_z, "at once, for everyone");
+    assert_eq!(groups(&app.get("/api/live/lineup/groups", &admin).await.body), a_to_z, "the lineup's too");
+}
+
+#[tokio::test]
 async fn channels_that_dont_play_and_divider_rows_are_left_out() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
