@@ -1496,7 +1496,7 @@ impl LiveTv {
             }
         };
         // Its channels' own guides, as they are now.
-        let own: Vec<(String, ChannelRow)> = own_guides(&channels);
+        let own = own_guides(&channels);
         let days = i64::from(self.settings().guide_days);
         let (from, to) = (now() - GUIDE_BEHIND, now() + days * 86_400);
         let (mut programs, matches) = match downloaded {
@@ -1534,12 +1534,16 @@ impl LiveTv {
         // Then each channel's own guide: one that can't be read keeps the
         // programs it had, and says why in the source.
         let mut failed: Vec<(String, String)> = Vec::new();
-        for (address, channel) in &own {
-            match self.read_channel_guide(address, channel, &source, from, to).await {
-                Ok(found) => programs.extend(found),
-                Err(err) => {
-                    tracing::warn!(source = id, channel = channel.id, "reading a channel's own guide failed: {err:#}");
-                    failed.push((address.clone(), format!("{}: {err:#}", channel.display_name())));
+        for guide in &own {
+            for (address, read) in self.read_own_guide(guide, &source, from, to).await {
+                let channel = guide.channels.iter().find(|c| c.address == address).map(|c| &c.channel);
+                let name = channel.map(ChannelRow::display_name).unwrap_or_default();
+                match read {
+                    Ok(found) => programs.extend(found),
+                    Err(err) => {
+                        tracing::warn!(source = id, "reading {name}'s own guide failed: {err:#}");
+                        failed.push((address, format!("{name}: {err:#}")));
+                    }
                 }
             }
         }
@@ -1603,48 +1607,76 @@ impl LiveTv {
         Ok(Some(count))
     }
 
-    /// The guide addresses channels of a source were given.
-    async fn channel_guide_addresses(&self, source: i64) -> anyhow::Result<Vec<(String, ChannelRow)>> {
+    /// The guides channels of a source were given by their addresses.
+    async fn channel_guide_addresses(&self, source: i64) -> anyhow::Result<Vec<OwnGuide>> {
         Ok(own_guides(&self.channel_rows(Some(source), true).await.map_err(|e| anyhow::anyhow!("{e}"))?))
     }
 
-    /// The programs of a guide given a channel by its address, as that
-    /// address's: of the guide's only channel, else of the one the channel's
-    /// id or name finds.
-    async fn read_channel_guide(
+    /// Reads a guide channels were given by its address, once, and finds
+    /// each its channel: the one its address names after `#`, else the
+    /// guide's only channel, else the one of its id or name. Each address
+    /// gets its channel's programs as its own, or why it has none.
+    async fn read_own_guide(
         &self,
-        address: &str,
-        channel: &ChannelRow,
+        guide: &OwnGuide,
         source: &SourceRow,
         from: i64,
         to: i64,
-    ) -> anyhow::Result<Vec<xmltv::Program>> {
-        let path = self.download_guide(address, source).await?;
-        let (source_id, name) = (channel.guide_id.clone(), channel.display_name().to_owned());
+    ) -> Vec<(String, anyhow::Result<Vec<xmltv::Program>>)> {
+        let failed = |err: &anyhow::Error| {
+            guide.channels.iter().map(|c| (c.address.clone(), Err(anyhow::anyhow!("{err:#}")))).collect()
+        };
+        let path = match self.download_guide(&guide.url, source).await {
+            Ok(path) => path,
+            Err(err) => return failed(&err),
+        };
+        let wanted: Vec<(Option<String>, String, String)> = guide
+            .channels
+            .iter()
+            .map(|c| (c.named.clone(), c.channel.guide_id.clone(), c.channel.display_name().to_owned()))
+            .collect();
         let read = read_guide_file(path.clone(), from, to, move |guide_channels| {
             let index = GuideIndex::new(guide_channels);
-            let chosen = match guide_channels {
-                [only] => Some(only.id.clone()),
-                _ if index.ids.contains(source_id.as_str()) => Some(source_id.clone()),
-                _ => index.matching(&source_id, &name).map(str::to_owned),
-            };
-            (chosen.iter().cloned().collect(), chosen)
+            let chosen: Vec<Option<String>> = wanted
+                .iter()
+                .map(|(named, id, name)| match (named, guide_channels) {
+                    (Some(named), _) => index.ids.contains(named.as_str()).then(|| named.clone()),
+                    (None, [only]) => Some(only.id.clone()),
+                    (None, _) if index.ids.contains(id.as_str()) => Some(id.clone()),
+                    (None, _) => index.matching(id, name).map(str::to_owned),
+                })
+                .collect();
+            (chosen.iter().flatten().cloned().collect(), chosen)
         })
         .await;
         let _ = tokio::fs::remove_file(&path).await;
-        let (guide, chosen) = read?;
-        let Some(chosen) = chosen else {
-            if guide.channels.is_empty() {
-                bail!("the guide lists no channels");
-            }
-            bail!("the guide has {} channels, and none is this one by its id or name", guide.channels.len());
+        let (read, chosen) = match read {
+            Ok(read) => read,
+            Err(err) => return failed(&err),
         };
-        Ok(guide
-            .programs
-            .into_iter()
-            .filter(|p| p.channel == chosen)
-            .map(|p| xmltv::Program { channel: address.to_owned(), ..p })
-            .collect())
+        guide
+            .channels
+            .iter()
+            .zip(chosen)
+            .map(|(c, chosen)| {
+                let found = match (chosen, &c.named) {
+                    (Some(chosen), _) => Ok(read
+                        .programs
+                        .iter()
+                        .filter(|p| p.channel == chosen)
+                        .map(|p| xmltv::Program { channel: c.address.clone(), ..p.clone() })
+                        .collect()),
+                    _ if read.channels.is_empty() => Err(anyhow::anyhow!("the guide lists no channels")),
+                    (None, Some(named)) => Err(anyhow::anyhow!("the guide has no channel {named}")),
+                    (None, None) => Err(anyhow::anyhow!(
+                        "the guide has {} channels, and none is this one by its id or name: name one after # at \
+                         the address's end",
+                        read.channels.len()
+                    )),
+                };
+                (c.address.clone(), found)
+            })
+            .collect()
     }
 
     async fn download(&self, url: &str, user_agent: &str, max: usize) -> anyhow::Result<Vec<u8>> {
@@ -2650,19 +2682,75 @@ fn normalize(name: &str) -> String {
 /// The file a guide's address names, when it names one (`/…`, `file://…`)
 /// rather than a web address: checked to be on this computer
 /// ([`local_guide`]).
-/// The guide addresses `channels` were given, each with the first channel
-/// given it.
-fn own_guides(channels: &[ChannelRow]) -> Vec<(String, ChannelRow)> {
-    let mut out: Vec<(String, ChannelRow)> = Vec::new();
+/// A guide channels were given by its address: read once, however many
+/// name it, for each of them.
+#[derive(Debug, Clone)]
+struct OwnGuide {
+    /// Where it's read from, without a `#…`.
+    url: String,
+    channels: Vec<OwnGuideChannel>,
+}
+
+#[derive(Debug, Clone)]
+struct OwnGuideChannel {
+    /// The address as given, the key of its programs.
+    address: String,
+    /// The guide's channel named after `#`.
+    named: Option<String>,
+    /// The first channel given the address.
+    channel: ChannelRow,
+}
+
+/// The guides `channels` were given by their addresses.
+fn own_guides(channels: &[ChannelRow]) -> Vec<OwnGuide> {
+    let mut out: Vec<OwnGuide> = Vec::new();
     for c in channels {
         let Some(address) = c.custom_guide_id.as_deref().map(str::trim).filter(|g| is_guide_address(g)) else {
             continue;
         };
-        if !out.iter().any(|(a, _)| a == address) {
-            out.push((address.to_owned(), c.clone()));
+        let (url, named) = split_guide_address(address);
+        let at = match out.iter().position(|g| g.url == url) {
+            Some(at) => at,
+            None => {
+                out.push(OwnGuide { url: url.to_owned(), channels: Vec::new() });
+                out.len() - 1
+            }
+        };
+        if !out[at].channels.iter().any(|g| g.address == address) {
+            out[at].channels.push(OwnGuideChannel { address: address.to_owned(), named, channel: c.clone() });
         }
     }
     out
+}
+
+/// A guide address and the channel it names after `#`
+/// (`https://iptv-epg.org/files/epg-us.xml.gz#DisneyChannel.us`), as typed
+/// or percent-encoded.
+fn split_guide_address(address: &str) -> (&str, Option<String>) {
+    match address.split_once('#') {
+        Some((url, named)) => (url, Some(percent_decoded(named.trim())).filter(|n| !n.is_empty())),
+        None => (address, None),
+    }
+}
+
+fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (bytes[i], bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(hi), Some(lo)) => {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| text.to_owned())
 }
 
 /// A channel's guide given as the address of an XMLTV guide (`https://…`),
@@ -2764,6 +2852,23 @@ fn beside_in(ids: &[i64], id: i64, forward: bool) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn guide_addresses_name_their_channel_after_a_hash() {
+        use super::split_guide_address as split;
+        assert_eq!(split("https://e.test/us.xml.gz"), ("https://e.test/us.xml.gz", None));
+        assert_eq!(
+            split("https://e.test/us.xml.gz#DisneyChannel.us"),
+            ("https://e.test/us.xml.gz", Some("DisneyChannel.us".into()))
+        );
+        assert_eq!(
+            split("https://e.test/us.xml#The%20Graham%20Norton%20Show").1.as_deref(),
+            Some("The Graham Norton Show")
+        );
+        assert_eq!(split("https://e.test/us.xml#The Graham Norton Show").1.as_deref(), Some("The Graham Norton Show"));
+        assert_eq!(split("https://e.test/us.xml#").1, None);
+        assert_eq!(split("https://e.test/us.xml#%zz").1.as_deref(), Some("%zz"));
+    }
+
     use super::*;
 
     #[test]

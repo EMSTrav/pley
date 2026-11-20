@@ -450,13 +450,38 @@ async fn a_channel_takes_a_guide_of_its_own_by_its_address() {
     wait_until_read(&app, &admin).await;
     assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
 
+    // Two channels from one guide of many, each the one its address names
+    // after `#` (as typed, or percent-encoded).
+    assert_eq!(set(ten, format!("{base}/own/many.xml#a.test")).await, StatusCode::NO_CONTENT);
+    assert_eq!(set(two, format!("{base}/own/many.xml#b%2Etest")).await, StatusCode::NO_CONTENT);
+    for _ in 0..100 {
+        if on_now(&app, &admin, ten).await["title"] == "Not This" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Not This");
+    assert_eq!(on_now(&app, &admin, two).await["title"], "Match of the Day");
+    // A channel the guide doesn't have: the source says which.
+    assert_eq!(set(ten, format!("{base}/own/many.xml#c.test")).await, StatusCode::NO_CONTENT);
+    let mut error = Value::Null;
+    for _ in 0..100 {
+        error = app.get("/api/live/sources", &admin).await.body[0]["guide_error"].clone();
+        if error.is_string() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(error, json!("Ten: the guide has no channel c.test"));
+    assert_eq!(on_now(&app, &admin, two).await["title"], "Match of the Day", "the guide is read for the rest");
+
     // One that isn't there: the source says so, and the rest stays.
     assert_eq!(set(ten, format!("{base}/own/gone.xml")).await, StatusCode::NO_CONTENT);
     let mut error = Value::Null;
     for _ in 0..100 {
         let sources = app.get("/api/live/sources", &admin).await.body;
         error = sources[0]["guide_error"].clone();
-        if error.is_string() {
+        if error.as_str().is_some_and(|e| e.contains("404")) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

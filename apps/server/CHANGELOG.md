@@ -25,7 +25,8 @@ describes how they are made.
   narrators, series and genres from Audnexus. Administrators can turn this
   off in Settings → Server.
 - A Live TV channel its source's guide lacks can take a guide of its own:
-  the address of an XMLTV guide, in its Guide channel in the lineup.
+  the address of an XMLTV guide, in its Guide channel in the lineup, with
+  `#` and the channel's id after it for a guide of many channels.
 - A Live TV channel whose source has all its connections in use plays on
   another source that has the same channel and a connection free.
 

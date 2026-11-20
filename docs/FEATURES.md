@@ -76,7 +76,8 @@ In the web and desktop apps only, for now.
 
 - IPTV from M3U playlists and Xtream Codes, with XMLTV guides, on every
   app. A channel its source's guide lacks can take a guide of its own by
-  its address, such as epg.pw's.
+  its address, such as epg.pw's, or a country's from IPTV-EPG.org with the
+  channel named after `#`.
 - One connection per channel however many people watch, within the
   provider's limit. A channel several sources carry plays on another's
   connection when its own source's are all in use.

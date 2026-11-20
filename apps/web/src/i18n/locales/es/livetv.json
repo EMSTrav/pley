@@ -366,7 +366,7 @@
       "guideHintSource": "Su identificador en la guía (XMLTV). Vacío: el de la fuente, {{id}}.",
       "guideHintMatched": "Su identificador en la guía (XMLTV). Vacío: {{id}}, el canal de la guía que le corresponde.",
       "guideHintNone": "Su identificador en la guía (XMLTV): la fuente no indica ninguno y ninguno coincide con su nombre.",
-      "guideAddress": "O, para un canal que falta en la guía de la fuente, la dirección de una guía XMLTV propia (https://…).",
+      "guideAddress": "O, para un canal que falta en la guía de la fuente, la dirección de una guía XMLTV propia (https://…), seguida de # y el identificador del canal cuando esa guía tiene varios (…/epg-us.xml.gz#DisneyChannel.us).",
       "note": "Un nuevo canal de la guía muestra sus programas cuando se actualiza la guía."
     },
     "account": {
