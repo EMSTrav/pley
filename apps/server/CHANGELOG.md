@@ -27,6 +27,10 @@ describes how they are made.
   tool such as Kometa to make them: Make collections from TMDB, in the
   library's settings, removes them when turned off, edits and all, and
   makes them again when turned back on.
+- Audiobooks get the summary, year and cover their files lack from Open
+  Library, and narrators, series and genres too from Audnexus when their
+  files carry an Audible ASIN. Administrators turn it off in Settings →
+  Server.
 
 ### Changed
 

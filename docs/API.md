@@ -4816,7 +4816,8 @@ on another administrator's account, but for the `GET`s
   `"auto"` and turns `hardware_decoding` on; a combination saved before
   stays.
 - **`settings/test`** makes one request to `service` (`"tmdb"`, `"tvdb"`,
-  `"tvmaze"`, `"musicbrainz"`, `"transcoder"` or `"opensubtitles"`) with the
+  `"tvmaze"`, `"musicbrainz"`, `"audiobooks"` (Open Library and Audnexus),
+  `"transcoder"` or `"opensubtitles"`) with the
   key and PIN given (not saved), else the saved ones. OpenSubtitles: its
   key, or with a `username`, a sign-in of that account (`password` left
   out: the saved one, for the saved username). `message` says what
@@ -4899,6 +4900,7 @@ interface Settings {
   tvdb_api_key: string;             // TheTVDB v4 key; "" = not set
   tvdb_pin: string;                 // TheTVDB subscriber PIN, for user-supported keys
   music_metadata: boolean;          // MusicBrainz + Cover Art Archive for music libraries (default true)
+  book_metadata: boolean;           // Open Library and Audnexus for audiobook libraries (default true)
   read_nfo: boolean;                // read NFO files next to movies, shows, seasons and episodes (default
                                     // true; see CONFIGURATION.md). A change scans every library
   strm_files: boolean;              // movie and TV libraries list and play .strm files (default false; see
