@@ -30,6 +30,8 @@ describes how they are made.
 
 ### Changed
 
+- The web app's English words are spelled the American way: color,
+  favorite, program.
 - The web app's sidebar lists Playlists as one more row under the
   libraries, opening the page of all your playlists, in place of a section
   of its own.
