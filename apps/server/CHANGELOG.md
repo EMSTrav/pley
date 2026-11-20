@@ -9,6 +9,11 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard charts the network next to the CPU and memory, and lists who
+  Pley is sending to and how fast.
+
 ### Fixed
 
 - The recommended folder layouts in Settings → Libraries are in Chinese.
