@@ -39,7 +39,7 @@ describes how they are made.
   TMDB corrects a film after the first copy was named, are one movie with
   versions once both are matched to the same TMDB title, keeping what was
   watched, rated and listed of either. Fix Match on it separates them
-  again.
+  again, and they stay apart.
 - Films and shows with accents in their names are matched when the names
   came from a Mac. Ones already scanned are matched by the library's Force
   full rescan.

@@ -789,3 +789,53 @@ async fn copies_matched_to_the_same_title_are_one_movie() {
     app.wait_for_scans().await;
     assert_eq!(app.ids(lib, &admin).await.len(), 4);
 }
+
+/// A copy that fixing a merged movie's match let go stays apart from it,
+/// even when matched to the same title again (as an automatic match that
+/// put two films together would do), until its own match is fixed to that
+/// title: then it goes into the movie, which the fix answers with.
+#[tokio::test]
+async fn a_copy_let_go_stays_apart_until_its_match_is_fixed() {
+    let (app, _tmdb, admin, lib) = world().await;
+    app.media_file("movies/Aliens (1987) 2160p.mkv", 2048);
+    use_key(&app, &admin, KEY).await;
+    let aliens = || async {
+        let page = app.get(&format!("/api/libraries/{lib}/items"), &admin).await.body;
+        let mut found: Vec<i64> = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["title"] == "Aliens")
+            .map(|i| i["id"].as_i64().unwrap())
+            .collect();
+        found.sort();
+        found
+    };
+    let merged = aliens().await;
+    assert_eq!(merged.len(), 1, "{merged:?}");
+    let movie = merged[0];
+
+    // Fixed to the title it has, the copy its name doesn't make goes, and
+    // is matched to that title again on its own, but stays a movie apart.
+    let fixed = app.post(&format!("/api/items/{movie}/match"), &admin, json!({"tmdb_id": 679})).await;
+    assert_eq!(fixed.status, StatusCode::OK, "{:?}", fixed.body);
+    assert_eq!(fixed.body["id"], json!(movie));
+    assert_eq!(fixed.body["files"].as_array().map(Vec::len), Some(1), "{:?}", fixed.body);
+    let apart = aliens().await;
+    assert_eq!(apart.len(), 2, "{apart:?}");
+    let copy = apart[1];
+    let other = app.get(&format!("/api/items/{copy}"), &admin).await.body;
+    assert_eq!(other["tmdb_id"], json!(679), "{other}");
+    app.post(&format!("/api/libraries/{lib}/scan"), &admin, json!({"force": true})).await;
+    app.wait_for_scans().await;
+    assert_eq!(aliens().await, apart);
+
+    // Fixed by hand to that title, the copy goes into the movie, and the
+    // fix answers with it rather than with the copy that's gone.
+    let fixed = app.post(&format!("/api/items/{copy}/match"), &admin, json!({"tmdb_id": 679})).await;
+    assert_eq!(fixed.status, StatusCode::OK, "{:?}", fixed.body);
+    assert_eq!(fixed.body["id"], json!(movie), "{:?}", fixed.body);
+    assert_eq!(fixed.body["files"].as_array().map(Vec::len), Some(2), "{:?}", fixed.body);
+    assert_eq!(aliens().await, [movie]);
+    assert_eq!(app.get(&format!("/api/items/{copy}"), &admin).await.status, StatusCode::NOT_FOUND);
+}

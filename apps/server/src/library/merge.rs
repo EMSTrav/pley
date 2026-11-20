@@ -13,7 +13,10 @@
 //! them finds the movie they went into.
 //!
 //! [`split`] undoes it when someone fixes the movie's match: each file goes
-//! back to the movie its own name makes, to be matched on its own.
+//! back to the movie its own name makes, to be matched on its own. Those
+//! movies stay apart from it (`movies_apart`) even when matched to its title
+//! again: an automatic match that put two films together would do it again
+//! after the split. Fixing either's match by hand forgets that.
 
 use std::path::Path;
 
@@ -24,9 +27,9 @@ use super::scanner::{movie_for_file, movie_key};
 use crate::db::Db;
 use crate::util::now;
 
-/// Merge the movies of a library that share a TMDB id. Returns the movies
-/// others went into.
-pub async fn same_movies(db: &Db, library_id: i64) -> sqlx::Result<Vec<i64>> {
+/// Merge the movies of a library that share a TMDB id, except those kept
+/// apart. Returns each movie merged with the movie it went into.
+pub async fn same_movies(db: &Db, library_id: i64) -> sqlx::Result<Vec<(i64, i64)>> {
     // By TMDB id, the movie keyed by it first, then the first added.
     let rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT tmdb_id, id FROM items
@@ -41,35 +44,59 @@ pub async fn same_movies(db: &Db, library_id: i64) -> sqlx::Result<Vec<i64>> {
     if rows.is_empty() {
         return Ok(Vec::new());
     }
-    let mut kept = Vec::new();
+    let mut merged = Vec::new();
     let mut tx = db.write.begin().await?;
-    let mut current: Option<(i64, i64)> = None;
+    // The movies of the TMDB id at hand that stay, which the next goes into:
+    // the first it may go into, or it stays too.
+    let mut tmdb = None;
+    let mut kept: Vec<i64> = Vec::new();
     for (tmdb_id, id) in rows {
-        match current {
-            Some((tmdb, into)) if tmdb == tmdb_id => {
-                // Matched again since the list was read: still the same title?
-                let same: Option<i64> = sqlx::query_scalar(
-                    "SELECT 1 FROM items a JOIN items b ON a.tmdb_id = b.tmdb_id WHERE a.id = ? AND b.id = ?",
-                )
-                .bind(into)
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-                if same.is_some() {
-                    merge_into(&mut tx, into, id).await?;
-                    tracing::info!("merged movie {id} into {into}, both TMDB {tmdb_id}");
-                    if kept.last() != Some(&into) {
-                        kept.push(into);
-                    }
-                }
+        if tmdb != Some(tmdb_id) {
+            tmdb = Some(tmdb_id);
+            kept.clear();
+        }
+        let mut into = None;
+        for &movie in &kept {
+            if mergeable(&mut tx, library_id, movie, id).await? {
+                into = Some(movie);
+                break;
             }
-            _ => current = Some((tmdb_id, id)),
+        }
+        match into {
+            Some(into) => {
+                merge_into(&mut tx, into, id).await?;
+                tracing::info!("merged movie {id} into {into}, both TMDB {tmdb_id}");
+                merged.push((id, into));
+            }
+            None => kept.push(id),
         }
     }
     tx.commit().await?;
     // Hand edits that came with the other copies show.
-    crate::overrides::apply(db, &kept).await?;
-    Ok(kept)
+    let mut into: Vec<i64> = merged.iter().map(|&(_, into)| into).collect();
+    into.sort_unstable();
+    into.dedup();
+    crate::overrides::apply(db, &into).await?;
+    Ok(merged)
+}
+
+/// Whether movie `from` goes into `into`: still matched to the same title
+/// (a match may have changed since the list was read), and not kept apart
+/// from it, by its own key or one merged into it.
+async fn mergeable(conn: &mut SqliteConnection, library_id: i64, into: i64, from: i64) -> sqlx::Result<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM items a JOIN items b ON a.tmdb_id = b.tmdb_id WHERE a.id = ?2 AND b.id = ?3)
+            AND NOT EXISTS (SELECT 1 FROM movies_apart p WHERE p.library_id = ?1 AND (
+                (p.item_id = ?2 AND p.key IN (SELECT key FROM items WHERE id = ?3
+                                              UNION ALL SELECT key FROM item_aliases WHERE item_id = ?3))
+                OR (p.item_id = ?3 AND p.key IN (SELECT key FROM items WHERE id = ?2
+                                                 UNION ALL SELECT key FROM item_aliases WHERE item_id = ?2))))",
+    )
+    .bind(library_id)
+    .bind(into)
+    .bind(from)
+    .fetch_one(&mut *conn)
+    .await
 }
 
 /// Move everything of `from` to `into`, then delete `from`. What both have,
@@ -81,6 +108,9 @@ async fn merge_into(conn: &mut SqliteConnection, into: i64, from: i64) -> sqlx::
         "INSERT INTO item_aliases (library_id, key, item_id) SELECT library_id, key, ?1 FROM items WHERE id = ?2
          ON CONFLICT(library_id, key) DO UPDATE SET item_id = excluded.item_id",
         "UPDATE item_aliases SET item_id = ?1 WHERE item_id = ?2",
+        // What was kept apart from it is from `into` too.
+        "INSERT OR IGNORE INTO movies_apart (library_id, key, item_id) SELECT library_id, key, ?1 FROM movies_apart
+         WHERE item_id = ?2",
         "UPDATE media_files SET item_id = ?1 WHERE item_id = ?2",
         // Bonus material.
         "UPDATE items SET parent_id = ?1 WHERE parent_id = ?2",
@@ -135,9 +165,11 @@ async fn merge_into(conn: &mut SqliteConnection, into: i64, from: i64) -> sqlx::
     Ok(())
 }
 
-/// Before a movie is matched to another title: its files that its own key
-/// doesn't make go back to the movies their names make, and the keys merged
-/// into it are let go. Returns those movies, which have yet to be matched.
+/// Before a movie is matched by hand: what it was kept apart from is
+/// forgotten (the person says what it is), its files that its own key
+/// doesn't make go back to the movies their names make, kept apart from it,
+/// and the keys merged into it are let go. Returns those movies, which have
+/// yet to be matched.
 pub async fn split(db: &Db, lib: &LibraryRow, movie: i64) -> sqlx::Result<Vec<i64>> {
     let roots = lib.paths();
     let mut tx = db.write.begin().await?;
@@ -146,9 +178,19 @@ pub async fn split(db: &Db, lib: &LibraryRow, movie: i64) -> sqlx::Result<Vec<i6
         .fetch_optional(&mut *tx)
         .await?;
     let Some(key) = key else { return Ok(Vec::new()) };
+    sqlx::query(
+        "DELETE FROM movies_apart WHERE library_id = ?1 AND (item_id = ?2 OR key = ?3
+            OR key IN (SELECT key FROM item_aliases WHERE item_id = ?2))",
+    )
+    .bind(lib.id)
+    .bind(movie)
+    .bind(&key)
+    .execute(&mut *tx)
+    .await?;
     let aliases = sqlx::query("DELETE FROM item_aliases WHERE item_id = ?").bind(movie).execute(&mut *tx).await?;
     if aliases.rows_affected() == 0 {
         // Never merged: nothing to split.
+        tx.commit().await?;
         return Ok(Vec::new());
     }
     let files: Vec<(i64, String)> = sqlx::query_as("SELECT id, path FROM media_files WHERE item_id = ? ORDER BY id")
@@ -182,8 +224,15 @@ pub async fn split(db: &Db, lib: &LibraryRow, movie: i64) -> sqlx::Result<Vec<i6
             .bind(file)
             .fetch_one(&mut *tx)
             .await?;
-        let id = movie_for_file(&mut tx, lib.id, Path::new(&path), &root, duration, false).await?;
+        let path = Path::new(&path);
+        let id = movie_for_file(&mut tx, lib.id, path, &root, duration, false).await?;
         sqlx::query("UPDATE media_files SET item_id = ? WHERE id = ?").bind(id).bind(file).execute(&mut *tx).await?;
+        sqlx::query("INSERT OR IGNORE INTO movies_apart (library_id, key, item_id) VALUES (?, ?, ?)")
+            .bind(lib.id)
+            .bind(movie_key(path, &root))
+            .bind(movie)
+            .execute(&mut *tx)
+            .await?;
         if id != movie && !made.contains(&id) {
             made.push(id);
         }

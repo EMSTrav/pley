@@ -1508,12 +1508,13 @@ async fn movies_with_the_same_tmdb_id_merge_with_what_was_done_with_them() {
     app.media_file("movies/Heat (1995).mkv", 1024);
     app.media_file("movies/Heat (1996) Remux.mkv", 2048);
     let lib = app.library(&admin, "Movies", "movies", "movies").await;
-    let mut both: Vec<(i64, i64)> = sqlx::query_as("SELECT id, year FROM items WHERE kind = 'movie' ORDER BY id")
+    // Added by the same scan, in the order the folder lists them: the one
+    // with the lower id is the first.
+    let both: Vec<i64> = sqlx::query_scalar("SELECT id FROM items WHERE kind = 'movie' ORDER BY id")
         .fetch_all(&app.state.db.read)
         .await
         .unwrap();
-    both.sort_by_key(|(_, year)| *year);
-    let (first, second) = (both[0].0, both[1].0);
+    let (first, second) = (both[0], both[1]);
     let user: i64 = sqlx::query_scalar("SELECT id FROM users").fetch_one(&app.state.db.read).await.unwrap();
     let db = &app.state.db.write;
     for sql in [

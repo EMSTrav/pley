@@ -2386,7 +2386,9 @@ impl Run {
                 .await?
                 .unwrap_or(false);
                 if unmatched && self.state.metadata.tmdb_enabled() {
-                    match self.state.metadata.rematch(id, *tmdb).await {
+                    // Copies matched to the same title merge at the fetch's
+                    // scan, once what Plex has of each was brought to it.
+                    match self.state.metadata.rematch_unmerged(id, *tmdb).await {
                         Ok(()) => self.report.matches_fixed += 1,
                         Err(e) => tracing::debug!("the Plex import couldn't match {title}: {e:#}"),
                     }
@@ -2402,7 +2404,7 @@ impl Run {
                     .await?;
                 }
             } else if self.state.metadata.tmdb_enabled() {
-                match self.state.metadata.rematch(id, *tmdb).await {
+                match self.state.metadata.rematch_unmerged(id, *tmdb).await {
                     Ok(()) => self.report.matches_fixed += 1,
                     Err(e) => tracing::debug!("the Plex import couldn't match {title} again: {e:#}"),
                 }

@@ -444,11 +444,29 @@ impl MetadataAgent {
         Ok(())
     }
 
-    /// Make the movies of a library matched to the same title one movie
-    /// ([`crate::library::merge`]); the scanner does after each scan.
-    async fn merge_movies(&self, library_id: i64) {
-        if let Err(err) = crate::library::merge::same_movies(&self.db, library_id).await {
-            tracing::warn!("merging copies of the same movie in library {library_id} failed: {err}");
+    /// Make the movies of item `item_id`'s library matched to the same title
+    /// one movie ([`crate::library::merge`]), as the scanner does after each
+    /// scan. Returns the item's id after: another when it went into a copy.
+    async fn merge_movies(&self, item_id: i64) -> i64 {
+        let library: Option<i64> =
+            match sqlx::query_scalar("SELECT library_id FROM items WHERE id = ? AND kind = 'movie'")
+                .bind(item_id)
+                .fetch_optional(&self.db.read)
+                .await
+            {
+                Ok(library) => library,
+                Err(err) => {
+                    tracing::warn!("merging copies of movie {item_id} failed: {err}");
+                    return item_id;
+                }
+            };
+        let Some(library) = library else { return item_id };
+        match crate::library::merge::same_movies(&self.db, library).await {
+            Ok(merged) => merged.iter().find(|&&(from, _)| from == item_id).map_or(item_id, |&(_, into)| into),
+            Err(err) => {
+                tracing::warn!("merging copies of the same movie in library {library} failed: {err}");
+                item_id
+            }
         }
     }
 
@@ -564,8 +582,18 @@ impl MetadataAgent {
         self.store.path(&blob).context("invalid blob")
     }
 
-    /// Refresh one item (movie, show, season or episode → its show).
+    /// Refresh one item (movie, show, season or episode → its show). A movie
+    /// then matched to the title of another copy is merged with it.
     pub async fn refresh_item(&self, item_id: i64) -> anyhow::Result<()> {
+        if self.refresh_unmerged(item_id).await? {
+            self.merge_movies(item_id).await;
+        }
+        Ok(())
+    }
+
+    /// As [`Self::refresh_item`], without merging. Whether it refreshed a
+    /// movie.
+    async fn refresh_unmerged(&self, item_id: i64) -> anyhow::Result<bool> {
         let row: Option<(String, Option<i64>, Option<i64>)> =
             sqlx::query_as("SELECT kind, parent_id, grandparent_id FROM items WHERE id = ?")
                 .bind(item_id)
@@ -573,14 +601,14 @@ impl MetadataAgent {
                 .await?;
         let Some((kind, parent, grandparent)) = row else { bail!("item not found") };
         if !self.can_refresh(&kind) {
-            return Ok(());
+            return Ok(false);
         }
         let target = match kind.as_str() {
             "movie" | "show" | "artist" | "album" => item_id,
             "season" => parent.context("season without show")?,
             "episode" => grandparent.context("episode without show")?,
             "track" => parent.context("track without album")?,
-            _ => return Ok(()),
+            _ => return Ok(false),
         };
         // Not one locked by its NFO file (Jellyfin's lockdata): that is never
         // fetched online.
@@ -591,19 +619,10 @@ impl MetadataAgent {
         .bind(target)
         .fetch_optional(&self.db.read)
         .await?;
-        let Some(item) = item else { return Ok(()) };
+        let Some(item) = item else { return Ok(false) };
         let movie = item.kind == "movie";
         self.refresh_candidate(item).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        if movie {
-            let library: Option<i64> = sqlx::query_scalar("SELECT library_id FROM items WHERE id = ?")
-                .bind(target)
-                .fetch_optional(&self.db.read)
-                .await?;
-            if let Some(library) = library {
-                self.merge_movies(library).await;
-            }
-        }
-        Ok(())
+        Ok(movie)
     }
 
     async fn refresh_candidate(&self, item: Candidate) -> Result<(), TmdbError> {
@@ -658,8 +677,17 @@ impl MetadataAgent {
 
     /// Match a movie or show to another TMDB entry and refresh it. The
     /// choice is kept as an override ([`crate::overrides::MATCH`]): the ids
-    /// of the item's NFO file don't undo it.
-    pub async fn rematch(&self, item_id: i64, tmdb_id: i64) -> anyhow::Result<()> {
+    /// of the item's NFO file don't undo it. A movie matched to the title of
+    /// another copy is merged with it: returns the item's id after.
+    pub async fn rematch(&self, item_id: i64, tmdb_id: i64) -> anyhow::Result<i64> {
+        self.rematch_unmerged(item_id, tmdb_id).await?;
+        Ok(self.merge_movies(item_id).await)
+    }
+
+    /// As [`Self::rematch`], leaving copies of the same title apart until the
+    /// library's next scan merges them: the Plex import's, which keeps the
+    /// ids it found until it has brought what was done with them.
+    pub async fn rematch_unmerged(&self, item_id: i64, tmdb_id: i64) -> anyhow::Result<()> {
         // A movie other copies were merged into: they go back to being
         // movies of their own, found again by their names.
         let row: Option<(String, i64)> = sqlx::query_as("SELECT kind, library_id FROM items WHERE id = ?")
@@ -715,11 +743,12 @@ impl MetadataAgent {
         // what it set gives way to the chosen title's metadata.
         crate::overrides::nfo_set_aside(&self.db, item_id).await?;
         for id in split {
-            if let Err(err) = self.refresh_item(id).await {
+            if let Err(err) = self.refresh_unmerged(id).await {
                 tracing::warn!("metadata for movie {id}, split from {item_id}, failed: {err:#}");
             }
         }
-        self.refresh_item(item_id).await
+        self.refresh_unmerged(item_id).await?;
+        Ok(())
     }
 
     /// Posters, backdrops or episode stills TMDB has for an item.
