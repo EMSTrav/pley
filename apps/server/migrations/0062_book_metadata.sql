@@ -1,6 +1,6 @@
--- Audiobooks' online metadata: the Audible product (ASIN, "B08G9PRS1K") or,
--- for a book Audible doesn't have, the Open Library work ("OL21745884W")
--- a book was matched to. A later refresh looks the book up by them instead
--- of searching again.
+-- What an audiobook was looked up by (see `src/providers/books.rs`): the
+-- Audible ASIN its files carry ("B08G9PRS1K"), which Audnexus is asked by,
+-- and the Open Library work it was matched to ("OL21745884W"), which a later
+-- look-up keeps while it still fits the book.
 ALTER TABLE items ADD COLUMN audible_asin TEXT;
 ALTER TABLE items ADD COLUMN openlibrary_id TEXT;

@@ -37,8 +37,13 @@ pub const OPEN_LIBRARY: &str = "https://openlibrary.org";
 pub const OPEN_LIBRARY_COVERS: &str = "https://covers.openlibrary.org";
 /// Genres kept for a book.
 const MAX_GENRES: usize = 5;
-/// A library pass stops after this many failures in a row (neither source
-/// answers); what's left is tried after the next scan.
+/// Writers or narrators kept for a book, and the characters kept of a name,
+/// of a series and of a summary: as many as the scanner keeps of tags.
+const MAX_NAMES: usize = 50;
+const MAX_TEXT: usize = 500;
+const MAX_SUMMARY: usize = 20_000;
+/// A library pass stops after this many failures in a row (a source doesn't
+/// answer); what's left is tried after the next scan.
 const MAX_FAILURES: u32 = 5;
 /// What the scanner calls a book's writer when nothing names one.
 const UNKNOWN_AUTHOR: &str = "Unknown Author";
@@ -60,7 +65,6 @@ pub struct Books {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct AudnexusBook {
-    asin: String,
     title: Option<String>,
     #[serde(deserialize_with = "nullable")]
     authors: Vec<Person>,
@@ -127,21 +131,17 @@ struct WorkDoc {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Work {
-    description: Option<Description>,
+    description: Option<serde_json::Value>,
 }
 
-/// A work's description: text, or `{ "type": "/type/text", "value": text }`.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Description {
-    Text(String),
-    Typed { value: String },
-}
-
-impl Description {
-    fn text(&self) -> &str {
-        match self {
-            Description::Text(t) | Description::Typed { value: t } => t,
+impl Work {
+    /// Its description: text, or `{ "type": "/type/text", "value": text }`;
+    /// none in any other shape.
+    fn description(&self) -> Option<&str> {
+        match self.description.as_ref()? {
+            serde_json::Value::String(text) => Some(text),
+            serde_json::Value::Object(typed) => typed.get("value")?.as_str(),
+            _ => None,
         }
     }
 }
@@ -184,6 +184,8 @@ struct PartInfo {
 /// What the book's files carry: an Audible ASIN, and cover art.
 #[derive(Debug, Default)]
 struct FileFacts {
+    /// Whether any of them has been read.
+    read: bool,
     asin: Option<String>,
     cover: bool,
 }
@@ -238,7 +240,7 @@ impl Books {
             let result = self.refresh_book(id, country).await;
             done += 1;
             match result {
-                Ok(()) => failures = 0,
+                Ok(None) => failures = 0,
                 Err(ProviderError::NotFound) => {
                     failures = 0;
                     tracing::debug!("no Audnexus or Open Library match for item {id}");
@@ -248,11 +250,11 @@ impl Books {
                         .execute(&self.db.write)
                         .await?;
                 }
-                Err(err) => {
+                Ok(Some(err)) | Err(err) => {
                     tracing::warn!("audiobook metadata for item {id} failed: {err:#}");
                     failures += 1;
                     if failures >= MAX_FAILURES {
-                        bail!("neither Audnexus nor Open Library is answering; the rest waits for the next scan");
+                        bail!("Audnexus or Open Library isn't answering; the rest waits for the next scan");
                     }
                 }
             }
@@ -271,16 +273,27 @@ impl Books {
             .bind(id)
             .fetch_optional(&self.db.read)
             .await?;
-        match row {
-            Some((kind, _)) if kind == "audiobook" => self.refresh_book(id, country).await,
-            Some((kind, Some(book))) if kind == "part" => self.refresh_book(book, country).await,
-            _ => Ok(()),
+        let book = match row {
+            Some((kind, _)) if kind == "audiobook" => id,
+            Some((kind, Some(book))) if kind == "part" => book,
+            _ => return Ok(()),
+        };
+        match self.refresh_book(book, country).await? {
+            None => Ok(()),
+            // What Open Library has is written, and hand edits go back over
+            // it; Audnexus is asked again after the next scan.
+            Some(err) => {
+                tracing::warn!("audiobook metadata for item {book}: {err:#}");
+                Ok(())
+            }
         }
     }
 
     /// Audnexus for a book with an ASIN; Open Library for the rest, for a
-    /// book Audnexus doesn't know, and while Audnexus can't be reached.
-    async fn refresh_book(&self, id: i64, country: &str) -> Result<(), ProviderError> {
+    /// book Audnexus doesn't know, and while Audnexus can't be reached. In
+    /// that last case the answer is Audnexus's error, and the book stays to
+    /// be fetched: Audnexus is asked again after the next scan.
+    async fn refresh_book(&self, id: i64, country: &str) -> Result<Option<ProviderError>, ProviderError> {
         let row: BookRow = sqlx::query_as(
             "SELECT title, authors, poster, audible_asin, openlibrary_id FROM items WHERE id = ? AND kind = 'audiobook'",
         )
@@ -294,12 +307,13 @@ impl Books {
         }
         let files = self.file_facts(id).await?;
 
-        // The files' ASIN first: it is the recording they hold.
-        let asin = files.asin.clone().or_else(|| row.audible_asin.clone().filter(|a| is_asin(a)));
-        let audnexus_error = match asin {
+        // The files' ASIN: it is the recording they hold. The one kept from
+        // before stands in only while none of them has been read.
+        let asin = if files.read { files.asin.clone() } else { row.audible_asin.clone().filter(|a| is_asin(a)) };
+        let audnexus_error = match &asin {
             None => None,
-            Some(asin) => match self.audnexus_book(&asin, country).await {
-                Ok(Some(found)) => return self.write_audnexus(id, &row, &files, found).await,
+            Some(asin) => match self.audnexus_book(asin, country).await {
+                Ok(Some(found)) => return self.write_audnexus(id, asin, &row, &files, found).await.map(|()| None),
                 Ok(None) => None,
                 Err(err) => {
                     tracing::debug!("Audnexus: {err:#}");
@@ -308,7 +322,11 @@ impl Books {
             },
         };
         match self.openlibrary_work(&book, row.openlibrary_id.as_deref()).await {
-            Ok(Some((doc, description))) => self.write_openlibrary(id, &row, &files, doc, description).await,
+            Ok(Some((doc, description))) => {
+                let done = audnexus_error.is_none();
+                self.write_openlibrary(id, asin.as_deref(), &row, &files, doc, description, done).await?;
+                Ok(audnexus_error)
+            }
             // Audnexus not answering isn't "no such book": tried again later.
             Ok(None) => Err(audnexus_error.unwrap_or(ProviderError::NotFound)),
             Err(err) => Err(audnexus_error.unwrap_or(err)),
@@ -321,6 +339,7 @@ impl Books {
     async fn audnexus_book(&self, asin: &str, country: &str) -> Result<Option<AudnexusBook>, ProviderError> {
         let region = audnexus_region(country);
         let regions = if region == DEFAULT_REGION { vec![region] } else { vec![region, DEFAULT_REGION] };
+        let mut error = None;
         for region in regions {
             let request = self
                 .audnexus
@@ -332,30 +351,29 @@ impl Books {
                 Ok(book) if book.title.as_deref().is_some_and(|t| !t.trim().is_empty()) => return Ok(Some(book)),
                 // An ASIN not sold in a region is a 404 there.
                 Ok(_) | Err(ProviderError::NotFound) => {}
-                Err(err) => return Err(err),
+                // The United States' region may have it all the same.
+                Err(err) => error = error.or(Some(err)),
             }
         }
-        Ok(None)
+        error.map_or(Ok(None), Err)
     }
 
     async fn write_audnexus(
         &self,
         id: i64,
+        asin: &str,
         row: &BookRow,
         files: &FileFacts,
         found: AudnexusBook,
     ) -> Result<(), ProviderError> {
-        let summary = found.summary.as_deref().map(strip_html).filter(|s| !s.is_empty());
+        let summary = found.summary.as_deref().map(|s| cut(&strip_html(s), MAX_SUMMARY)).filter(|s| !s.is_empty());
         let released = release_day(found.release_date.as_deref());
         let genres = genres(&found.genres);
         let genres = (!genres.is_empty()).then(|| serde_json::to_string(&genres).unwrap_or_default());
-        let authors: Vec<String> =
-            found.authors.iter().filter(|a| !is_credited_role(&a.name)).map(|a| a.name.trim().to_owned()).collect();
-        let authors = (!authors.is_empty()).then(|| serde_json::to_string(&authors).unwrap_or_default());
-        let narrators: Vec<&str> = found.narrators.iter().map(|n| n.name.trim()).filter(|n| !n.is_empty()).collect();
-        let narrators = (!narrators.is_empty()).then(|| serde_json::to_string(&narrators).unwrap_or_default());
+        let authors = names(found.authors.iter().map(|a| a.name.as_str()).filter(|a| !is_credited_role(a)));
+        let narrators = names(found.narrators.iter().map(|n| n.name.as_str()));
         let series = found.series_primary.as_ref().filter(|s| !s.name.trim().is_empty());
-        let series_title = series.map(|s| s.name.trim().to_owned());
+        let series_title = series.map(|s| cut(&s.name, MAX_TEXT));
         let series_index = series.and_then(|s| sequence(s.position.as_deref()));
         // Covers in the files or next to them win.
         let poster =
@@ -376,7 +394,7 @@ impl Books {
                 metadata_at = ?, updated_at = ?
              WHERE id = ?",
         )
-        .bind(&found.asin)
+        .bind(asin)
         .bind(year_of(released))
         .bind(full_date(released))
         .bind(summary)
@@ -408,70 +426,67 @@ impl Books {
         self.openlibrary.json(request).await
     }
 
-    /// The work for a book: the one it was matched to before, else the best
-    /// search result; with its description.
+    /// The work for a book, with its description: the best search result,
+    /// or the one it was matched to before while that still fits it.
     async fn openlibrary_work(
         &self,
         book: &Book,
         known: Option<&str>,
     ) -> Result<Option<(WorkDoc, Option<String>)>, ProviderError> {
-        let doc = match known.filter(|k| is_work_id(k)) {
-            Some(key) => WorkDoc { key: format!("/works/{key}"), ..WorkDoc::default() },
-            None => {
-                let title = clean_title(&book.title);
-                let mut query = vec![
-                    ("title", title.as_str()),
-                    ("limit", "10"),
-                    ("fields", "key,title,subtitle,author_name,first_publish_year,cover_i,edition_count"),
-                ];
-                if let Some(author) = book.authors.first() {
-                    query.push(("author", author.as_str()));
-                }
-                let found: WorkSearch = self.ol_get("/search.json", &query).await?;
-                match best_work(found.docs, book) {
-                    Some(doc) => doc,
-                    None => return Ok(None),
-                }
-            }
-        };
+        let title = clean_title(&book.title);
+        let mut query = vec![
+            ("title", title.as_str()),
+            ("limit", "10"),
+            ("fields", "key,title,subtitle,author_name,first_publish_year,cover_i,edition_count"),
+        ];
+        if let Some(author) = book.authors.first() {
+            query.push(("author", author.as_str()));
+        }
+        let found: WorkSearch = self.ol_get("/search.json", &query).await?;
+        let Some(doc) = best_work(found.docs, book, known) else { return Ok(None) };
         let Some(key) = doc.key.strip_prefix("/works/").filter(|k| is_work_id(k)) else { return Ok(None) };
         let work: Work = match self.ol_get(&format!("/works/{key}.json"), &[]).await {
             Err(ProviderError::NotFound) => return Ok(None),
             other => other?,
         };
-        let description = work.description.map(|d| clean_description(d.text())).filter(|d| !d.is_empty());
+        let description = work.description().map(|d| cut(&clean_description(d), MAX_SUMMARY)).filter(|d| !d.is_empty());
         Ok(Some((doc, description)))
     }
 
+    /// `done`: the book is fetched; else it is left to be fetched again.
+    #[allow(clippy::too_many_arguments)]
     async fn write_openlibrary(
         &self,
         id: i64,
+        asin: Option<&str>,
         row: &BookRow,
         files: &FileFacts,
         doc: WorkDoc,
         description: Option<String>,
+        done: bool,
     ) -> Result<(), ProviderError> {
         let key = doc.key.trim_start_matches("/works/").to_owned();
         let cover = doc.cover_i.filter(|c| *c > 0).map(|c| format!("{}/b/id/{c}-L.jpg", self.covers));
         let poster =
             if files.cover { None } else { artwork(&self.store, row.poster.as_deref(), cover.as_deref()).await };
-        let authors: Vec<&str> = doc.author_name.iter().map(|a| a.trim()).filter(|a| !a.is_empty()).collect();
-        let authors = (!authors.is_empty()).then(|| serde_json::to_string(&authors).unwrap_or_default());
+        let authors = names(doc.author_name.iter().map(String::as_str));
+        let year = doc.first_publish_year.filter(|y| (1..=9999).contains(y));
         let now = now();
         sqlx::query(
-            "UPDATE items SET openlibrary_id = ?, year = COALESCE(year, ?), summary = COALESCE(summary, ?),
-                poster = COALESCE(?, poster),
+            "UPDATE items SET openlibrary_id = ?, audible_asin = ?, year = COALESCE(year, ?),
+                summary = COALESCE(summary, ?), poster = COALESCE(?, poster),
                 authors = CASE WHEN authors IS NULL OR authors IN ('[]', '[\"Unknown Author\"]')
                                THEN COALESCE(?, authors) ELSE authors END,
                 metadata_at = ?, updated_at = ?
              WHERE id = ?",
         )
         .bind(key)
-        .bind(doc.first_publish_year)
+        .bind(asin)
+        .bind(year)
         .bind(description)
         .bind(poster)
         .bind(authors)
-        .bind(now)
+        .bind(done.then_some(now))
         .bind(now)
         .bind(id)
         .execute(&self.db.write)
@@ -492,6 +507,7 @@ impl Books {
         let mut out = FileFacts::default();
         for info in infos {
             let Ok(info) = serde_json::from_str::<PartInfo>(&info) else { continue };
+            out.read = true;
             out.cover |= info.has_cover_art;
             out.asin = out.asin.or_else(|| asin_tag(&info.tags));
         }
@@ -605,10 +621,11 @@ fn sequence(value: Option<&str>) -> Option<f64> {
 }
 
 /// The Open Library work for a book: the same title (or one holding the
-/// other), by one of its writers when it names any. Among works of the
-/// same name, the one with the most editions: the book itself, not a
-/// translation or an adaptation catalogued apart.
-fn best_work(docs: Vec<WorkDoc>, book: &Book) -> Option<WorkDoc> {
+/// other) by one of its writers, or with no writer to go by, the same
+/// title. The work it was matched to before (`known`) while it still fits;
+/// else among works of the same name, the one with the most editions: the
+/// book itself, not a translation or an adaptation catalogued apart.
+fn best_work(docs: Vec<WorkDoc>, book: &Book, known: Option<&str>) -> Option<WorkDoc> {
     let wanted = clean_title(&book.title);
     let mut best: Option<(f64, WorkDoc)> = None;
     for doc in docs {
@@ -617,14 +634,23 @@ fn best_work(docs: Vec<WorkDoc>, book: &Book) -> Option<WorkDoc> {
         let main = doc.title.split([';', ':']).next().map(str::trim).filter(|m| *m != doc.title);
         let titles = std::iter::once(doc.title.as_str()).chain(full.as_deref()).chain(main);
         let mut score = title_score(&wanted, titles);
-        if score == 0.0 || !is_work_id(doc.key.trim_start_matches("/works/")) {
+        let key = doc.key.trim_start_matches("/works/");
+        if score == 0.0 || !is_work_id(key) {
             continue;
         }
-        if !book.authors.is_empty() {
+        if book.authors.is_empty() {
+            // A title holding another names a different book too often.
+            if score < 3.0 {
+                continue;
+            }
+        } else {
             if !any_same(&book.authors, doc.author_name.iter().map(String::as_str)) {
                 continue;
             }
             score += 2.0;
+        }
+        if known == Some(key) {
+            return Some(doc);
         }
         // A work with a cover, and many editions, is the one people know.
         if doc.cover_i.is_some() {
@@ -638,6 +664,18 @@ fn best_work(docs: Vec<WorkDoc>, book: &Book) -> Option<WorkDoc> {
     best.map(|(_, d)| d)
 }
 
+/// Text from a source, trimmed and at most `max` characters long.
+fn cut(text: &str, max: usize) -> String {
+    text.trim().chars().take(max).collect::<String>().trim_end().to_owned()
+}
+
+/// Writers' or narrators' names as the column keeps them: a JSON list, of
+/// at most [`MAX_NAMES`]; none when no name is left.
+fn names<'a>(found: impl Iterator<Item = &'a str>) -> Option<String> {
+    let names: Vec<String> = found.map(|n| cut(n, MAX_TEXT)).filter(|n| !n.is_empty()).take(MAX_NAMES).collect();
+    (!names.is_empty()).then(|| serde_json::to_string(&names).unwrap_or_default())
+}
+
 /// The day of Audnexus's release time ("2021-05-04T00:00:00.000Z").
 fn release_day(value: Option<&str>) -> Option<&str> {
     value.map(|v| v.get(..10).unwrap_or(v))
@@ -647,9 +685,9 @@ fn release_day(value: Option<&str>) -> Option<&str> {
 fn genres(found: &[Genre]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for g in found.iter().filter(|g| g.kind.is_empty() || g.kind.eq_ignore_ascii_case("genre")) {
-        let name = g.name.trim();
-        if !name.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(name)) {
-            out.push(name.to_owned());
+        let name = cut(&g.name, MAX_TEXT);
+        if !name.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&name)) {
+            out.push(name);
         }
         if out.len() == MAX_GENRES {
             break;
@@ -776,22 +814,36 @@ mod tests {
             {"key": "/books/OL4M", "title": "Small Hours", "author_name": ["Imogen Vale"], "cover_i": 7}
         ]))
         .unwrap();
-        assert_eq!(best_work(docs, &book("Small Hours", &["Imogen Vale"])).unwrap().key, "/works/OL3W");
+        assert_eq!(best_work(docs, &book("Small Hours", &["Imogen Vale"]), None).unwrap().key, "/works/OL3W");
         // The work itself, under its full title, over a later one of the
         // same short name with fewer editions.
-        let docs: Vec<WorkDoc> = serde_json::from_value(serde_json::json!([
+        let docs = serde_json::json!([
             {"key": "/works/OL7W", "title": "Small Hours", "author_name": ["Imogen Vale"], "cover_i": 1,
              "edition_count": 40},
             {"key": "/works/OL6W", "title": "Small Hours; or, A Porter's Year", "author_name": ["Imogen Vale"],
              "cover_i": 2, "edition_count": 900}
-        ]))
-        .unwrap();
-        assert_eq!(best_work(docs, &book("Small Hours", &["Imogen Vale"])).unwrap().key, "/works/OL6W");
+        ]);
+        let pick = |docs: &serde_json::Value, book: &Book, known: Option<&str>| {
+            best_work(serde_json::from_value(docs.clone()).unwrap(), book, known).map(|d| d.key)
+        };
+        let vale = book("Small Hours", &["Imogen Vale"]);
+        assert_eq!(pick(&docs, &vale, None).as_deref(), Some("/works/OL6W"));
+        // The work matched before, while it still fits; else the best.
+        assert_eq!(pick(&docs, &vale, Some("OL7W")).as_deref(), Some("/works/OL7W"));
+        assert_eq!(pick(&docs, &book("Small Hours", &["Someone Else"]), Some("OL7W")), None);
         let other: Vec<WorkDoc> = serde_json::from_value(serde_json::json!([
             {"key": "/works/OL5W", "title": "Small Hours", "author_name": ["Someone Else"]}
         ]))
         .unwrap();
-        assert!(best_work(other, &book("Small Hours", &["Imogen Vale"])).is_none());
+        assert!(best_work(other, &vale, None).is_none());
+        // With no writer to go by, only the same title.
+        let collected = serde_json::json!([
+            {"key": "/works/OL8W", "title": "The Collected Small Hours", "author_name": ["Imogen Vale"],
+             "edition_count": 300},
+            {"key": "/works/OL9W", "title": "Small Hours", "author_name": ["Imogen Vale"]}
+        ]);
+        assert_eq!(pick(&collected, &book("Small Hours", &[]), None).as_deref(), Some("/works/OL9W"));
+        assert_eq!(pick(&collected, &book("Collected", &[]), None), None);
     }
 
     #[test]
@@ -804,9 +856,19 @@ mod tests {
         );
         assert_eq!(clean_description("*Small Hours* is a **quiet** novel."), "Small Hours is a quiet novel.");
         let typed: Work = serde_json::from_str(r#"{"description": {"type": "/type/text", "value": "Text."}}"#).unwrap();
-        assert_eq!(typed.description.unwrap().text(), "Text.");
+        assert_eq!(typed.description(), Some("Text."));
         let plain: Work = serde_json::from_str(r#"{"description": "Plain."}"#).unwrap();
-        assert_eq!(plain.description.unwrap().text(), "Plain.");
+        assert_eq!(plain.description(), Some("Plain."));
+        // Another shape is no description, not a book that can't be read.
+        for odd in [r#"{"description": {"type": "/type/text"}}"#, r#"{"description": 7}"#, r#"{"description": null}"#] {
+            assert_eq!(serde_json::from_str::<Work>(odd).unwrap().description(), None, "{odd}");
+        }
+        assert_eq!(cut("  a long name  ", 6), "a long");
+        assert_eq!(cut(&"é".repeat(MAX_TEXT + 10), MAX_TEXT).chars().count(), MAX_TEXT);
+        let many: Vec<String> = (0..MAX_NAMES + 5).map(|n| format!("Reader {n}")).collect();
+        let kept: Vec<String> = serde_json::from_str(&names(many.iter().map(String::as_str)).unwrap()).unwrap();
+        assert_eq!(kept.len(), MAX_NAMES);
+        assert_eq!(names(["", "  "].into_iter()), None);
         assert!(is_asin("B08G9PRS1K") && !is_asin("b08g9prs1k") && !is_asin("B08G9PRS1"));
         assert!(is_work_id("OL21745884W") && !is_work_id("OL21745884M") && !is_work_id("OLW"));
         assert!(is_credited_role("Juan Trejo - traductor") && !is_credited_role("Jean-Luc Picard"));

@@ -6,16 +6,14 @@
 //! - [`musicbrainz`]: artists and albums, no key needed, with album covers
 //!   from the Cover Art Archive.
 //! - [`books`]: audiobooks from Open Library, and Audnexus for those whose
-//!   files carry an Audible ASIN, no key
-//!   needed.
+//!   files carry an Audible ASIN, no key needed.
 //! - [`opensubtitles`]: subtitles to add to a file, with an API key each
 //!   server's administrator gets (see [`crate::subtitles`]).
 //!
 //! [`crate::metadata::MetadataAgent`] decides which source refreshes an item
 //! (see [`tv_source`]) and hands TV shows, music and audiobooks to
-//! [`Providers`]. The TV
-//! providers only fetch and translate; [`tv::write`] stores a show the same
-//! way for both.
+//! [`Providers`]. The TV providers only fetch and translate; [`tv::write`]
+//! stores a show the same way for both.
 
 pub mod books;
 pub mod musicbrainz;
@@ -42,6 +40,9 @@ use crate::util::normalize_key;
 
 /// Requests that are rate limited are tried this many times.
 const ATTEMPTS: u32 = 4;
+/// The most of a provider's JSON answer that is read: well above the largest
+/// they send (a long show's episodes), unpacked.
+const MAX_ANSWER_BYTES: usize = 16 << 20;
 /// MusicBrainz asks applications to identify themselves with a contact.
 const USER_AGENT: &str = concat!("pley/", env!("CARGO_PKG_VERSION"), " ( https://github.com/pley-media-server/pley )");
 
@@ -400,9 +401,16 @@ impl Api {
         Err(anyhow!("{} keeps asking to slow down", self.name).into())
     }
 
-    /// Send a request and read the JSON answer.
+    /// Send a request and read the JSON answer, up to [`MAX_ANSWER_BYTES`].
     pub(crate) async fn json<T: DeserializeOwned>(&self, request: reqwest::RequestBuilder) -> Result<T, ProviderError> {
-        let bytes = self.send(request).await?.bytes().await.map_err(|e| anyhow!("{}: {e}", self.name))?;
+        let mut resp = self.send(request).await?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await.map_err(|e| anyhow!("{}: {e}", self.name))? {
+            if bytes.len() + chunk.len() > MAX_ANSWER_BYTES {
+                return Err(anyhow!("{}'s answer is too large", self.name).into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
         serde_json::from_slice(&bytes).map_err(|e| anyhow!("unexpected answer from {}: {e}", self.name).into())
     }
 }

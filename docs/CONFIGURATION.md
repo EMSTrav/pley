@@ -106,10 +106,12 @@ its console window, or signing out.
   (`asin`, as Libation and OpenAudible write it) are looked up by it on
   Audnexus instead, which adds narrators, the series and the book's place
   in it, and genres; it is asked in the Audible region of the server's
-  country, then the United States'. Audnexus can't search, so a book
-  without an ASIN goes to Open Library alone, and Pley never asks Audible
-  itself. Both fill in only what the files' tags and folders lack, and
-  covers in or beside the files win.
+  country, then the United States'. While Audnexus doesn't answer, such a
+  book gets Open Library's details and Audnexus is asked again after the
+  next scan. Audnexus can't search, so a book without an ASIN goes to Open
+  Library alone, and Pley never asks Audible itself. Both fill in only what
+  the files' tags and folders lack, and covers in or beside the files win.
+  A book whose files change is looked up again after the scan.
 
 This product uses the TMDB API but is not endorsed or certified by TMDB. TV
 data from TVmaze is licensed

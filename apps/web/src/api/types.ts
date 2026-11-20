@@ -1055,7 +1055,8 @@ export interface Settings {
   tvdb_pin: string;
   /** Artists and albums from MusicBrainz, covers from the Cover Art Archive. */
   music_metadata: boolean;
-  book_metadata: boolean;
+  /** Audiobooks from Open Library, and Audnexus for those with an ASIN. Absent from servers before it. */
+  book_metadata?: boolean;
   /**
    * Ids and details from the NFO files next to movies, shows, seasons and
    * episodes, over the online source's. Absent from servers before it.

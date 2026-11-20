@@ -142,12 +142,15 @@ async fn start_mock() -> (Mock, String) {
             }),
         )
         // Audnexus and Open Library, with invented books. The Lantern Sea's
-        // ASIN isn't sold in the United Kingdom's region.
+        // ASIN isn't sold in the United Kingdom's region; B0BROKEN01 is
+        // asked while Audnexus fails.
         .route(
             "/audnexus/books/{asin}",
             get(|Path(asin): Path<String>, Query(q): Query<Vec<(String, String)>>, headers: HeaderMap| async move {
                 let us = q.iter().any(|(k, v)| k == "region" && v == "us");
-                if asin == "B0LANTERN1" && us {
+                if asin == "B0BROKEN01" {
+                    StatusCode::BAD_GATEWAY.into_response()
+                } else if asin == "B0LANTERN1" && us {
                     // The cover's address is the stand-in's own.
                     let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or_default();
                     json_reply(&AUDNEXUS_BOOK.replace("BASE", &format!("http://{host}")))
@@ -584,6 +587,46 @@ async fn audiobooks_from_open_library_and_audnexus() {
     assert!(book["poster_url"].is_string(), "{book}");
     assert_eq!(mock.requested("GET /audnexus/books/B0LANTERN1?region=uk"), 1);
     assert_eq!(mock.requested("GET /audnexus/books/B0LANTERN1?region=us"), 1);
+
+    // A part added: the scan writes what the files say over what was
+    // fetched, and the book is looked up again after it.
+    let searches = mock.requested("GET /ol/search.json");
+    app.media_file("books/Imogen Vale/Small Hours/02.mp3");
+    let scan = json!({"force": false});
+    let (status, body) = app.call(Method::POST, &format!("/api/libraries/{lib}/scan"), Some(&token), Some(scan)).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    app.wait_for_scans().await;
+    let found = app.get(&format!("/api/items/{hours}"), &token).await;
+    assert_eq!(
+        (found["year"].as_i64(), found["summary"].as_str()),
+        (Some(1987), Some("A night porter's quiet year.")),
+        "{found}"
+    );
+    assert!(mock.requested("GET /ol/search.json") > searches);
+
+    // Audnexus failing, in the server's region and the United States': Open
+    // Library's details are written, and the book is left to be fetched so
+    // that Audnexus is asked again.
+    let info = MediaInfo { tags: [("asin".to_owned(), "B0BROKEN01".to_owned())].into(), ..Default::default() };
+    sqlx::query("UPDATE media_files SET media_info = ? WHERE item_id IN (SELECT id FROM items WHERE parent_id = ?)")
+        .bind(serde_json::to_string(&info).unwrap())
+        .bind(hours)
+        .execute(&app.state.db.write)
+        .await
+        .unwrap();
+    let (status, body) = app.call(Method::POST, &format!("/api/items/{hours}/refresh"), Some(&token), None).await;
+    assert!(status.is_success(), "{body}");
+    for _ in 0..200 {
+        if mock.requested("GET /audnexus/books/B0BROKEN01?region=us") > 0 && metadata_at(hours).await.is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(metadata_at(hours).await, None);
+    assert_eq!(mock.requested("GET /audnexus/books/B0BROKEN01?region=uk"), 1);
+    assert_eq!(mock.requested("GET /audnexus/books/B0BROKEN01?region=us"), 1);
+    let found = app.get(&format!("/api/items/{hours}"), &token).await;
+    assert_eq!(found["summary"], "A night porter's quiet year.", "{found}");
 
     // Turned off: nothing is asked for.
     let (status, _) = app.call(Method::PUT, "/api/settings", Some(&token), Some(json!({"book_metadata": false}))).await;
