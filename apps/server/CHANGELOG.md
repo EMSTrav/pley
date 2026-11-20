@@ -27,6 +27,12 @@ describes how they are made.
   tool such as Kometa to make them: Make collections from TMDB, in the
   library's settings, removes them when turned off, edits and all, and
   makes them again when turned back on.
+- A collection without a poster of its own shows up to its first four
+  films' posters in a grid. In Change poster, on a collection's page,
+  administrators can add an icon in a color over the grid, put an icon
+  on a color alone, or upload a poster; Recently Added, Recently
+  Released, Top Rated and Top Unwatched start with icons of their own. A
+  poster Kometa sets counts as uploaded.
 - Audiobooks get the summary, year and cover their files lack from Open
   Library, and narrators, series and genres too from Audnexus when their
   files carry an Audible ASIN. Administrators turn it off in Settings →
