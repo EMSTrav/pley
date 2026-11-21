@@ -267,10 +267,15 @@ behind it.
   Choosing a result opens its page. With nothing typed, the profile's
   **recent searches** show, newest first: the last 10 searched or opened,
   kept on the device for each server and profile, each searched again
-  when chosen, and Clear. Nothing found says so ("No results for
+  when chosen, and Clear (on iPhone, iPad and Mac as chips that wrap).
+  Under them on iPhone, iPad and Mac, **Browse by genre**: the genres of
+  one of the profile's movie and show libraries, as its Filter offers
+  them, 12 at most, each a colored tile that opens the library filtered
+  by it; with more than one such library, a menu beside the heading picks
+  which, the first in the profile's order to begin with. Nothing found says so ("No results for
   “clip”"); a failed search says why, with Try again. Where requests
   are open, TMDB's titles that no library has follow the results in the
-  Discover row, and on iPhone, iPad and Mac Discover heads the page
+  Discover row, and on iPhone, iPad and Mac a Discover card ends the page
   before anything is typed ([Requests](#requests)).
 - **History**: the profile's plays, newest first, 15 at a time with Show
   more (`GET /api/history`). Each says what played ("The Office", "S2 · E3
