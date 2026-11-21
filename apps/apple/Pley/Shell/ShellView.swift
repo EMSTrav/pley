@@ -272,7 +272,8 @@ struct ShellView: View {
         switch section {
         case .home: HomeView(app: app)
         case .libraries: LibrariesView(app: app)
-        case .library(let id): LibraryView(app: app, libraryId: id)
+        // Another library picked under the same tab is a page of its own, never the last one's.
+        case .library(let id): LibraryView(app: app, libraryId: id).id(id)
         case .search: SearchView(app: app)
         case .playlists: PlaylistsView(app: app)
         case .me, .settings, .nowPlaying: MeView(app: app)
