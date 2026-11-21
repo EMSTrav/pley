@@ -155,6 +155,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The iPhone's Playlists tab is now Listen: recently played albums, your playlists (video ones
+  marked), artists and your music libraries.
 - The iPhone's Libraries tab is now Library: a tap opens a menu of your libraries and Live TV,
   and the tab takes the name of the one you chose.
 - English words are spelled the American way: color, favorite, program.

@@ -57,8 +57,9 @@ with Home meanwhile). Switching profile, signing out or signing
 in to another server starts every section again at Home.
 
 - **iPhone**, and iPad in a narrow window (Slide Over, a third of Split
-  View): a tab bar with Home, Library, Search, Playlists and Me. Library
-  opens a picker over the tab bar: the profile's libraries in its order,
+  View): a tab bar with Home, Library, Search, Listen and Me. Library
+  opens a picker over the tab bar: the profile's movie and show libraries
+  in its order (music is under Listen),
   each with its kind's symbol and what it holds, then Live TV with its
   channel count when it shows (marked Live), the one showing checked,
   then Edit order, which shows the list of libraries. Choosing one shows
@@ -415,7 +416,15 @@ behind it.
   titles. Play plays a collection of movies in its order as a queue;
   Shuffle starts the queue at a random movie. A collection of shows plays
   the first show's next episode (Shuffle, a random show's).
-- **Playlists** (the iPhone's tab, the sidebar's row on iPad and Mac, a
+- **Listen** (the iPhone's tab, in place of Playlists): Recently Played,
+  the albums of the profile's latest tracks in History, newest first, 12
+  at most; the profile's playlists, music and video alike, a video one
+  marked Video, with New Playlist first (and in the toolbar); Artists,
+  the first music library's, the most recently played first, with See all
+  opening the library; then each music library, opening its page. A part
+  with nothing in it is left out. Audiobooks aren't there: the server
+  gives Pley's apps no audiobook library.
+- **Playlists** (Listen's on iPhone, the sidebar's row on iPad and Mac, a
   tab on Apple TV): the profile's playlists by title, each as a mosaic of
   its first four pictures with "12 items · 3h 12m", and **New Playlist**.
   A playlist's page: its mosaic, title, the count and length, a smart

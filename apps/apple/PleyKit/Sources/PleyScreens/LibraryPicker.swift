@@ -20,16 +20,17 @@ public struct LibraryPickerEntry: Identifiable, Hashable, Sendable {
 
 /// The iPhone's Library tab (and the iPad's in a narrow window), which
 /// takes the place of Libraries: a tap opens a picker of the profile's
-/// libraries, in its order, each with what it holds, then Live TV with
+/// movie and show libraries, in its order, each with what it holds (music
+/// is under Listen, `ListenModel`), then Live TV with
 /// its channels when it shows, then Edit order (the libraries' list,
 /// where they are put in order). Choosing one shows it under the tab,
 /// whose label takes its name; until one is chosen, it is "Library". With
 /// one place to show, a tap goes straight there. The iPad's and the Mac's
 /// sidebar list the libraries themselves, and have no picker.
 public enum LibraryPicker {
-    /// The places the picker lists, in order.
+    /// The places the picker lists, in order: no music library, which Listen has.
     public static func entries(libraries: [Library], liveTv: LiveSummary?) -> [LibraryPickerEntry] {
-        var out = libraries.map { library in
+        var out = libraries.filter { $0.kind != .music }.map { library in
             LibraryPickerEntry(section: .library(library.id), title: library.name, detail: Words.libraryCount(library),
                                symbol: LibraryEntry.symbol(library.kind))
         }
