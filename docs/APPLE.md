@@ -1378,14 +1378,15 @@ it plays. Both lists are read again on `sessions_changed` (a receiver
 appearing or going sends it too), when the event stream connects again
 and when the app comes back to the front.
 
-- **iPhone and iPad**: a bar above the tabs with the device and what
-  plays there ("Ready to play" on one that plays nothing), or how many
-  devices and their names, and Play or Pause when one device plays and
+- **iPhone and iPad**: a bar above the tabs in two lines: what plays and
+  "Playing on" the device ("Paused on" while paused), the device and
+  "Ready to play" on one that plays nothing, or how many devices and their
+  names, and Play or Pause when one device plays and
   its player obeys it: pausing the TV takes one tap. From iOS 26.1 it is
   the tab bar's own accessory, where the mini player sits too; the
   accessory holds one of them, so while music plays here the mini player
   keeps it and has the remote's button at its end. Before iOS 26.1, and
-  at the foot of the page beside the iPad's sidebar, it is a card above
+  at the foot of the page beside the iPad's sidebar, it is a pill above
   the mini player. A Google Cast or an AirPlay device counts for the bar
   only while it plays: one is on whenever the network is, so idle, it
   would keep the bar there for good. Choosing it opens the remote as a

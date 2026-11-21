@@ -6544,6 +6544,35 @@
         }
       }
     },
+    "Paused on %@" : {
+      "comment" : "The remote bar's second line while what plays on another device is paused (\"Paused on Living room TV\").",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pause sur %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在 %@ 上暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在 %@ 上暫停"
+          }
+        }
+      }
+    },
     "Pending" : {
       "comment" : "Requests: Discover, a title page, the lists, the managers' dialogs and notices (RequestWords).",
       "localizations" : {
