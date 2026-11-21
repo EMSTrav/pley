@@ -99,6 +99,29 @@ public struct HomeInfo: Hashable, Sendable {
     }
 }
 
+/// A title in Home's banner on iPhone, iPad and Mac, every word made: why
+/// it is there ("New in Movies"), its title and facts, and its backdrop.
+public struct FeaturedTitle: Identifiable, Hashable, Sendable {
+    public let item: ItemSummary
+    /// "New in Movies", "Top rated", "On your list".
+    public let kicker: String
+    /// Its title, and "2016 · 1h 56m · ★ 7.6": the parts known.
+    public let info: HomeInfo
+    /// Server path of its backdrop.
+    public let backdrop: String
+
+    public var id: Int { item.id }
+    /// Started and not finished: Resume rather than Play.
+    public var inProgress: Bool { Words.isInProgress(item) }
+
+    public init(_ item: ItemSummary, kicker: String) {
+        self.item = item
+        self.kicker = kicker
+        info = HomeInfo(item, detail: nil)
+        backdrop = item.backdropUrl ?? ""
+    }
+}
+
 /// Home: the server's rows for the profile signed in, in the server's
 /// order, empty ones left out. It follows the server's events (watch
 /// state, My List, a library's items, the libraries, a scan that ended),
@@ -130,6 +153,9 @@ public final class HomeModel: ObservableObject {
     @Published public private(set) var state: State = .loading
     /// Apple TV: what the info block says of the tile with the focus.
     @Published public private(set) var info: HomeInfo?
+    /// iPhone, iPad and Mac: the banner's titles (`Featured.pick`), in turn;
+    /// empty with none that has a backdrop.
+    @Published public private(set) var featured: [FeaturedTitle] = []
 
     public let app: AppModel
     /// The `homeVersion` the rows shown are for.
@@ -138,6 +164,11 @@ public final class HomeModel: ObservableObject {
     private var listener: AnyCancellable?
     private var focusTask: Task<Void, Never>?
     private var details: [Int: ItemDetail] = [:]
+    /// The movie and show libraries' Top Rated rows, for the banner, as read last.
+    private var topRated: [ItemSummary] = []
+    private var topRatedTask: Task<Void, Never>?
+    /// The day the banner's top rated titles are picked for (the tests set their own).
+    var today: () -> Date = Date.init
 
     public init(app: AppModel) {
         self.app = app
@@ -164,6 +195,8 @@ public final class HomeModel: ObservableObject {
             warmed = false
             details = [:]
             info = nil
+            featured = []
+            topRated = []
         }
         if case .failed = state { state = .loading }
         do {
@@ -182,6 +215,7 @@ public final class HomeModel: ObservableObject {
                 state = .loaded(rows)
             }
             warmUp(rows, api: api)
+            feature(rows, libraries: libs)
             // Apple TV's Top Shelf follows Continue Watching.
             if let owner { app.homeRead(found, owner: owner) }
         } catch is CancellationError {
@@ -224,6 +258,38 @@ public final class HomeModel: ObservableObject {
             else { return }
             self.details[id] = detail
             if self.info?.itemId == id { self.info = HomeInfo(tile.item, detail: detail) }
+        }
+    }
+
+    /// The banner's titles from `rows`, then again once the libraries'
+    /// Top Rated rows come. Home never waits for those, and a library
+    /// that doesn't answer adds none. Apple TV has no banner, and reads none.
+    private func feature(_ rows: [HomeRow], libraries: [Library]) {
+        guard !ShellModel.isTV else { return }
+        featured = Self.featured(rows, libraries: libraries, topRated: topRated, day: Featured.day(of: today()))
+        let ids = libraries.filter { $0.kind == .movies || $0.kind == .shows }.map(\.id)
+            .prefix(Featured.topRatedLibraries)
+        guard !ids.isEmpty else { return }
+        topRatedTask?.cancel()
+        topRatedTask = Task { [weak self] in
+            var found: [ItemSummary] = []
+            for id in ids {
+                guard let self, !Task.isCancelled else { return }
+                let hubs = try? await self.app.cached(SnapshotKeys.libraryHubs(id)) { try await $0.libraryHubs(id) }
+                found += hubs?.first { $0.key == "top_rated:\(id)" }?.items ?? []
+            }
+            guard let self, !Task.isCancelled, found != self.topRated else { return }
+            self.topRated = found
+            self.featured = Self.featured(self.rows, libraries: libraries, topRated: found,
+                                          day: Featured.day(of: self.today()))
+        }
+    }
+
+    /// `Featured.pick`'s titles with what the banner says of each.
+    static func featured(_ rows: [HomeRow], libraries: [Library], topRated: [ItemSummary],
+                         day: Int64) -> [FeaturedTitle] {
+        Featured.pick(rows, topRated: topRated, day: day).map { pick in
+            FeaturedTitle(pick.item, kicker: Featured.label(pick, libraries: libraries))
         }
     }
 

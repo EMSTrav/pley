@@ -8,6 +8,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Home on iPhone, iPad and Mac opens on a banner of new and top rated titles, with Play,
+  My List and Details, and its rows have larger titles and rounder pictures.
 - A library's collections are grouped by category, with a filter by
   category, and a collection's page shows its category. A row's See
   all, and on iPhone, iPad and Mac its title, opens its collection, and

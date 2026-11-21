@@ -160,8 +160,22 @@ behind it.
   its initials on its color; one with a PIN asks for it (4 to 8 digits,
   typed on the number pad), one that needs its password says how to choose
   it, and a locked one can't be chosen.
-- **Home**: the server's rows for the profile, each a line of tiles in the
-  row's shape: stills for Continue Watching and episodes, posters for
+- **Home**: on iPhone, iPad and Mac, a banner of featured titles, then
+  the server's rows for the profile. The banner picks its titles as
+  Android's and the web's do: the newest movies and shows not yet watched
+  that have a backdrop, a library's at a time, then My List's (the newest
+  watched ones once everything has been), and in every third place one of
+  the movie and show libraries' Top Rated not yet watched, the same ones
+  all day. It shows one at a time over its backdrop, which fades into the
+  page: why it is there ("New in Movies", "Top rated", "On your list"), its
+  title, year, running time and rating, Play (Resume when part played), My
+  List and Details, and a dot for each title. It turns to the next every
+  9 seconds, except while touched, scrolled away, or under Reduce Motion;
+  a swipe or a dot turns it, and VoiceOver turns it with a swipe up or down
+  on the title, saying which of how many it is. On iPhone it runs up under
+  the status bar, without a navigation bar; beside the iPad's and the
+  Mac's sidebar it is a rounded card under the title. Apple TV has no
+  banner. Each of the server's rows is a line of tiles in the row's shape: stills for Continue Watching and episodes, posters for
   films and shows, squares for music. A tile shows its picture, its title
   and a second line (the year, "S2 · E5", the artist), how far it was
   played, a check once watched, and a show's unwatched episodes; VoiceOver
