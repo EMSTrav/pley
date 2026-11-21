@@ -48,7 +48,7 @@ impl Db {
             .connect_with(base.clone())
             .await?;
         backup_before_upgrade(&write, path).await?;
-        MIGRATOR.run(&write).await?;
+        MIGRATOR.run(&write).await.map_err(explain_migration)?;
 
         let readers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(4, 16) as u32;
         let read = SqlitePoolOptions::new()
@@ -68,6 +68,31 @@ impl Db {
         self.read.close().await;
         self.write.close().await;
     }
+}
+
+/// What to do when the database's schema isn't one this version made or
+/// knows. That happens to a database another build of Pley upgraded, a test
+/// build of a change not yet released, say, whose migrations were numbered
+/// or written otherwise than the ones that shipped: no released version
+/// changes a migration that shipped (`shipped_migrations_never_change`).
+fn explain_migration(err: sqlx::migrate::MigrateError) -> anyhow::Error {
+    use sqlx::migrate::MigrateError;
+    let what = match &err {
+        MigrateError::VersionMismatch(version) => {
+            format!(
+                "its migration {version} isn't this version's: another build of Pley, a test build say, upgraded it"
+            )
+        }
+        MigrateError::VersionMissing(version) => {
+            format!("its migration {version} is unknown to this version: a newer or a test build of Pley upgraded it")
+        }
+        _ => return err.into(),
+    };
+    anyhow::anyhow!(
+        "the database can't be upgraded: {what}. Start the build that upgraded it, or put back the copy made \
+         before that upgrade (in the backups folder, its name ending in {}.db) ({err})",
+        crate::backup::BEFORE_UPGRADE
+    )
 }
 
 /// Copies an existing database to `backups/` before migrations change it:
@@ -106,6 +131,137 @@ mod tests {
     async fn versions(path: &Path) -> Vec<i64> {
         let mut conn = SqliteConnectOptions::new().filename(path).read_only(true).connect().await.unwrap();
         sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version").fetch_all(&mut conn).await.unwrap()
+    }
+
+    /// Every migration on master, and the start of its SHA-384. A migration
+    /// that has been on master ships in the next release, and a server that
+    /// ran it refuses to start on one whose file says anything else, a
+    /// comment included: a change is a new migration, never an edit.
+    const SHIPPED: &[(&str, &str)] = &[
+        ("0001_init.sql", "fa10fe09d7bdf5a8"),
+        ("0002_stream_preferences.sql", "739e261f0cc7df35"),
+        ("0003_markers.sql", "516dbf2a21c9d5ac"),
+        ("0004_accounts.sql", "6c8dfb7d8b12d8c0"),
+        ("0005_collections_playlists.sql", "15a13fcf45679b1b"),
+        ("0006_item_overrides.sql", "5e4ea0013300787c"),
+        ("0007_people.sql", "15a06c7d14e861d4"),
+        ("0008_play_history.sql", "b8653da2d53ef82e"),
+        ("0009_user_ratings.sql", "b9ed6c3ccceec01b"),
+        ("0010_storage.sql", "81807b2bbe700b62"),
+        ("0011_extras.sql", "a7becd248bbe7a68"),
+        ("0012_metadata_providers.sql", "59655ceb72a9a835"),
+        ("0013_query_indexes.sql", "9f6b93dd4eb61698"),
+        ("0014_track_defaults.sql", "763939d3be15bb68"),
+        ("0015_labels.sql", "883b018ea7cfa6ab"),
+        ("0016_smart_collections.sql", "1758a15eb0325ef3"),
+        ("0017_smart_playlists.sql", "6583a92796cc386a"),
+        ("0018_sso.sql", "a01f0305f9645d9f"),
+        ("0019_two_step.sql", "67f103e0ac75a3f9"),
+        ("0020_library_order.sql", "ab7305fb2dec77a8"),
+        ("0021_library_ids.sql", "4bf528b32b0b9c65"),
+        ("0022_no_single_sign_on.sql", "cf568f92ef8b3a5c"),
+        ("0023_apps.sql", "420ea4e9f3c9c54f"),
+        ("0024_decode_order_times.sql", "43c1ade68192e0e2"),
+        ("0025_my_list.sql", "762ac3ef5726fe79"),
+        ("0026_lasting_ids.sql", "b83550c2ccfdad90"),
+        ("0027_own_library_order.sql", "2aacc42144009683"),
+        ("0028_hdr10plus_and_dv_layers.sql", "78abfffe700123eb"),
+        ("0029_lasting_grant_ids.sql", "22d1bf83a4470e6f"),
+        ("0030_playback_networks.sql", "22f9dc7594825bab"),
+        ("0031_added_subtitles.sql", "632c02d31126fb97"),
+        ("0032_live_tv.sql", "3fe97ac7fe512ee4"),
+        ("0033_live_offline.sql", "ae7b13deda0a391c"),
+        ("0034_live_source_uid.sql", "56fd28ea94f655e2"),
+        ("0035_apps_moved.sql", "e96729b66038e743"),
+        ("0036_requests.sql", "f2dbecaf7ecbe9f7"),
+        ("0037_request_followers.sql", "eba20827624ffbe5"),
+        ("0038_requests_unused.sql", "28e699d6bd7c02b2"),
+        ("0039_request_sends.sql", "647f3f380338f7e8"),
+        ("0040_file_dynamic_range.sql", "c6b944f2dbf6694a"),
+        ("0041_compatibility_tokens.sql", "1e986a941ff3bd6d"),
+        ("0042_compatibility_token_origins.sql", "a968fdf0d2b3e754"),
+        ("0043_collection_labels.sql", "d65c9ac1ca791836"),
+        ("0044_dolby_vision_in_frames.sql", "c55d8967bf522e11"),
+        ("0045_item_nfo.sql", "18baddd841fa8fa1"),
+        ("0046_user_language.sql", "49cff4bdf3f1c0a7"),
+        ("0047_rating_country.sql", "9894a35a55c042af"),
+        ("0048_age_limit_system.sql", "2b62ea12ad360d0d"),
+        ("0049_birth_month.sql", "e5ed9e75c0fe2a8f"),
+        ("0050_label_rules.sql", "f1448d0f575c5bff"),
+        ("0051_import_accounts.sql", "63b687195e871dfc"),
+        ("0052_labels_pending.sql", "47d6f960fef626bc"),
+        ("0053_airplay_pairings.sql", "5c3a1af2a34e36eb"),
+        ("0054_grants_by_cast.sql", "21b034ff2e65cb58"),
+        ("0055_audiobooks.sql", "05df403b96411fde"),
+        ("0056_audiobook_details.sql", "621a0692b705e942"),
+        ("0057_collection_categories.sql", "987d745fdb9e478d"),
+        ("0058_other_category.sql", "86e77284a66b588f"),
+        ("0059_strm_files.sql", "a27b258e2fb87444"),
+        ("0060_box_sets_category.sql", "eea834126080318f"),
+        ("0061_tmdb_collections_switch.sql", "0990e98956afb58e"),
+        ("0062_book_metadata.sql", "2814d1f94ba73ffb"),
+        ("0063_collection_artwork.sql", "e9d2cd80c77bb271"),
+        ("0064_item_aliases.sql", "0f075a2251edeba2"),
+    ];
+
+    #[test]
+    fn shipped_migrations_never_change() {
+        let files: Vec<(String, String)> = MIGRATOR
+            .iter()
+            .map(|m| {
+                let hex: String = m.checksum.iter().map(|b| format!("{b:02x}")).collect();
+                (format!("{:04}_{}.sql", m.version, m.description.replace(' ', "_")), hex)
+            })
+            .collect();
+        for (i, (name, start)) in SHIPPED.iter().enumerate() {
+            let Some((_, hex)) = files.iter().find(|(file, _)| file == name) else {
+                panic!("{name} shipped and can't go: servers that ran it refuse to start without it");
+            };
+            assert!(
+                hex.starts_with(start),
+                "{name} shipped and can't change, not even a comment: servers that ran it refuse to start on \
+                 another. Put it back, and make the change a new migration"
+            );
+            assert_eq!(files[i].0, *name, "a new migration goes after the ones that shipped");
+        }
+        // A new migration is added to SHIPPED as it goes to master, with the
+        // line this prints.
+        if let Some((name, hex)) = files.get(SHIPPED.len()) {
+            panic!(
+                "{name} is new: add it to SHIPPED as it goes to master, numbered after master's last:\n        \
+                 (\"{name}\", \"{}\"),",
+                &hex[..16]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_database_another_build_changed_says_what_to_do() {
+        let dir = crate::testing::tempdir();
+        let path = dir.path().join("pley.db");
+        Db::open(&path).await.unwrap().close().await;
+        // As a test build would leave it: its own migration 62 run.
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path)).await.unwrap();
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = x'00' WHERE version = 62").execute(&pool).await.unwrap();
+        pool.close().await;
+        let err = format!("{:#}", Db::open(&path).await.err().expect("refused"));
+        assert!(err.contains("migration 62 isn't this version's") && err.contains("-before-upgrade.db"), "{err}");
+
+        // Or one this version doesn't have.
+        let pool = SqlitePool::connect_with(SqliteConnectOptions::new().filename(&path)).await.unwrap();
+        let shipped = MIGRATOR.iter().find(|m| m.version == 62).unwrap().checksum.to_vec();
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 62")
+            .bind(shipped)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (9999, 'test', 1, x'00', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+        let err = format!("{:#}", Db::open(&path).await.err().expect("refused"));
+        assert!(err.contains("migration 9999 is unknown to this version"), "{err}");
     }
 
     #[tokio::test]

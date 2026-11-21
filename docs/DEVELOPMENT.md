@@ -108,6 +108,29 @@ from) changes. The server's runs on Linux, macOS and Windows, with a build on
 the oldest supported Rust, the license check and the Docker build
 ([RELEASING.md](RELEASING.md#ci)).
 
+### Database migrations
+
+The server's schema changes through the numbered files in
+`apps/server/migrations`, applied in order when it starts. A server
+remembers each one it ran and refuses to start on a migration with the same
+number that says anything else, a comment included. So:
+
+- A migration that has been on master is never edited, renamed or
+  removed: it ships in the next release. A change to it is a new migration.
+  `shipped_migrations_never_change` (`src/db.rs`) holds the list, and a new
+  migration's line goes into it as it goes to master; the test prints the
+  line.
+- A branch's new migration takes the number after master's last. When
+  another lands on master first, the branch's is renumbered as it is
+  rebased.
+- A build of a branch with a new migration, a pull request's test build
+  say, changes the database it runs on for good, and a later release may
+  number or write that migration otherwise. Try it on a copy of the data
+  folder (`--data-dir`), not a server people use. A database such a build
+  upgraded tells so when a release won't start on it; the copy Pley made
+  before that upgrade is in the data folder's `backups`, named
+  `…-before-upgrade.db`.
+
 ### Casting to Google Cast without a device
 
 Android's Google TV emulator is a Cast device: its system image (`google-tv`,

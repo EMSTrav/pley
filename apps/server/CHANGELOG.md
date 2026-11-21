@@ -9,6 +9,11 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Changed
+
+- When Pley won't start on a database another build changed, a test build
+  say, its log says so and where the copy from before that upgrade is.
+
 ## [0.1.14] - 2026-11-20
 
 ### Added
