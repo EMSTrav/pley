@@ -155,6 +155,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The iPhone's Libraries tab is now Library: a tap opens a menu of your libraries and Live TV,
+  and the tab takes the name of the one you chose.
 - English words are spelled the American way: color, favorite, program.
 - A library's Recommended tab no longer ends with a row of every collection.
 - Requests: a sign-in from before the app could ask says "Sign in again to ask for movies

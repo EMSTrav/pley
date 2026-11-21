@@ -2411,6 +2411,35 @@
         }
       }
     },
+    "Edit order" : {
+      "comment" : "The last row of the iPhone's Library picker: opens the list of libraries, where they are put in order.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar orden"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier l’ordre"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑顺序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯順序"
+          }
+        }
+      }
+    },
     "Episodes" : {
       "comment" : "A title's page: the heading of a season's episodes.",
       "localizations" : {

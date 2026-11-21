@@ -57,9 +57,17 @@ with Home meanwhile). Switching profile, signing out or signing
 in to another server starts every section again at Home.
 
 - **iPhone**, and iPad in a narrow window (Slide Over, a third of Split
-  View): a tab bar with Home, Libraries, Search, Playlists and Me. A library
-  opened from the sidebar before the window narrowed shows under
-  Libraries. While music has a queue, the mini player sits above the tab
+  View): a tab bar with Home, Library, Search, Playlists and Me. Library
+  opens a picker over the tab bar: the profile's libraries in its order,
+  each with its kind's symbol and what it holds, then Live TV with its
+  channel count when it shows (marked Live), the one showing checked,
+  then Edit order, which shows the list of libraries. Choosing one shows
+  it under the tab, which takes its name ("Movies") and keeps it while
+  other tabs show; a tap on the tab opens the picker again. With one
+  place to show, the tab goes straight there; with none, to the list,
+  which says why. VoiceOver reads the picker as a list of buttons, the
+  one showing selected. A library opened from the sidebar before the
+  window narrowed shows under Library. While music has a queue, the mini player sits above the tab
   bar (on iOS 26.1 and later, in the tab bar's own accessory, whose words
   stop growing at the largest size below the accessibility sizes, as the
   tab bar's own do). While another of the profile's devices is on, the
@@ -203,7 +211,7 @@ behind it.
   music. Play/Pause on the Siri Remote plays a tile. A mark or My List
   shows at once and goes back, with a toast saying why, when the server
   refuses. Nothing for administrators is offered.
-- **Libraries** (the iPhone's tab, Live TV first; the sidebar on iPad
+- **Libraries** (Edit order in the iPhone's Library picker, Live TV first; the sidebar on iPad
   and Mac; a tab on Apple TV when the libraries don't all fit): each library with what it holds ("412
   movies", "37 shows", "128 artists") and whether the server is scanning
   it. With two or more, they can be put in the profile's own order: Edit
@@ -439,7 +447,7 @@ behind it.
 - **Live TV** (when an administrator added an IPTV provider and opened
   it to the profile, `GET /api/live`; read at sign-in, at a profile change,
   when the lineup changes and when the event stream connects again): the
-  first row of the iPhone's Libraries (with its channel count), the
+  last row of the iPhone's Library picker (with its channel count), the
   sidebar's row after Home on iPad and Mac (View → Live TV, ⌘L), and a tab
   after Home on Apple TV. The categories (Favorites, Recently watched, All
   channels, each region's groups under it when two regions or more have
