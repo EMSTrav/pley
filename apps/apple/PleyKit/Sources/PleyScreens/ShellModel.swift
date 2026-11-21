@@ -401,6 +401,24 @@ public final class ShellModel: ObservableObject {
         paths[section, default: []].append(screen)
     }
 
+    /// A library's page title menu: library `id` instead of the one
+    /// showing. A library's own section (the sidebar's rows) goes to that
+    /// library's section; a library page opened in another section is
+    /// replaced, so Back doesn't walk through every library chosen.
+    public func switchLibrary(to id: Int) {
+        if case .library = section, shows(.library(id)) {
+            select(.library(id))
+            return
+        }
+        var path = paths[section, default: []]
+        if case .library = path.last {
+            path[path.count - 1] = .library(id)
+            paths[section] = path
+        } else {
+            open(.library(id))
+        }
+    }
+
     /// The page `item` opens.
     public func open(item: ItemSummary) {
         open(Screen.page(of: item))

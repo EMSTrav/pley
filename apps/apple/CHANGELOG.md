@@ -10,6 +10,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Search, before anything is typed, shows your recent searches as chips, a library's genres to
   browse, and Discover as a card.
+- A library's title is a menu that switches to another library, and Filter has a dot while a
+  filter is on.
 - A library's collections are grouped by category, with a filter by
   category, and a collection's page shows its category. A row's See
   all, and on iPhone, iPad and Mac its title, opens its collection, and
