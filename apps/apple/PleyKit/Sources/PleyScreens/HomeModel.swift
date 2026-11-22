@@ -103,7 +103,7 @@ public struct HomeInfo: Hashable, Sendable {
     }
 }
 
-/// A title in Home's banner on iPhone, iPad and Mac, every word made: why
+/// A title in Home's banner, every word made: why
 /// it is there ("New in Movies"), its title and facts, and its backdrop.
 public struct FeaturedTitle: Identifiable, Hashable, Sendable {
     public let item: ItemSummary
@@ -157,7 +157,7 @@ public final class HomeModel: ObservableObject {
     @Published public private(set) var state: State = .loading
     /// Apple TV: what the info block says of the tile with the focus.
     @Published public private(set) var info: HomeInfo?
-    /// iPhone, iPad and Mac: the banner's titles (`Featured.pick`), in turn;
+    /// The banner's titles (`Featured.pick`), in turn;
     /// empty with none that has a backdrop.
     @Published public private(set) var featured: [FeaturedTitle] = []
 
@@ -267,9 +267,8 @@ public final class HomeModel: ObservableObject {
 
     /// The banner's titles from `rows`, then again once the libraries'
     /// Top Rated rows come. Home never waits for those, and a library
-    /// that doesn't answer adds none. Apple TV has no banner, and reads none.
+    /// that doesn't answer adds none.
     private func feature(_ rows: [HomeRow], libraries: [Library]) {
-        guard !ShellModel.isTV else { return }
         featured = Self.featured(rows, libraries: libraries, topRated: topRated, day: Featured.day(of: today()))
         let ids = libraries.filter { $0.kind == .movies || $0.kind == .shows }.map(\.id)
             .prefix(Featured.topRatedLibraries)

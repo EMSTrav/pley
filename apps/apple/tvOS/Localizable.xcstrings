@@ -328,6 +328,35 @@
         }
       }
     },
+    "%lld of %lld" : {
+      "comment" : "VoiceOver: which of Home's featured titles shows (\"2 of 6\").",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %1$lld 个，共 %2$lld 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %1$lld 個，共 %2$lld 個"
+          }
+        }
+      }
+    },
     "%lld percent" : {
       "comment" : "VoiceOver value of a request's download progress bar: \"42 percent\".",
       "localizations" : {

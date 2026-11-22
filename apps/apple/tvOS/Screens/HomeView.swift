@@ -3,14 +3,21 @@ import PleyModel
 import PleyScreens
 import SwiftUI
 
-/// Home: the server's rows for the profile signed in, each a line of tiles
-/// in its shape, moved through with the focus engine one row at a time.
-/// Above them, what the tile with the focus is: its title, its facts, and
-/// once the focus rests, its summary. It reads its rows again when the
-/// server says something on them changed.
+/// Home: the banner of featured titles (`HomeHero`), then the server's
+/// rows for the profile signed in, each a line of tiles in its shape,
+/// moved through with the focus engine one row at a time. Once the focus
+/// is in the rows, the banner gives its room to what the tile with the
+/// focus is: its title, its facts, and once the focus rests, its summary.
+/// It reads its rows again when the server says something on them changed.
 struct HomeView: View {
     @ObservedObject private var app: AppModel
     @StateObject private var model: HomeModel
+    /// The banner's title showing.
+    @State private var heroIndex = 0
+    /// Whether the focus went down to the rows since it was last on the banner.
+    @State private var inRows = false
+    @FocusState private var heroFocus: HomeHeroButton?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(app: AppModel) {
         self.app = app
@@ -50,8 +57,20 @@ struct HomeView: View {
                 // first tiles line up with Discover's, and the rows scroll to the edges.
                 .padding(.horizontal, Self.sideInset)
                 .ignoresSafeArea(.container, edges: .horizontal)
-                .background { HomeBackdrop(app: app, paths: model.info?.backdrops ?? []) }
+                .background { HomeBackdrop(app: app, paths: backdrops, wait: !showsBanner) }
         }
+    }
+
+    /// The banner, while the focus is on it, or until it has been in the rows.
+    private var showsBanner: Bool { !model.featured.isEmpty && !inRows }
+
+    /// The banner's title's backdrop while it shows, else the tile's with the focus.
+    private var backdrops: [String] {
+        if showsBanner {
+            let title = model.featured[min(heroIndex, model.featured.count - 1)]
+            return [title.backdrop]
+        }
+        return model.info?.backdrops ?? []
     }
 
     /// Inside the screen's sides, past which the margin (`Metrics.gutter`) starts.
@@ -59,7 +78,7 @@ struct HomeView: View {
 
     private func page(_ rows: [HomeRow]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            InfoBlock(info: model.info)
+            top
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Metrics.rowSpacing) {
                     ForEach(rows) { row in
@@ -68,7 +87,10 @@ struct HomeView: View {
                                 remove: row.continueWatching ? { tile in
                                     await model.removeFromContinueWatching(tile.item)
                                 } : nil,
-                                focused: { model.focus($0) }) { tile in
+                                focused: { tile in
+                                    inRows = true
+                                    model.focus(tile)
+                                }) { tile in
                             app.shell.open(item: tile.item)
                         }
                     }
@@ -77,18 +99,44 @@ struct HomeView: View {
             }
             .accessibilityIdentifier("home.rows")
         }
+        .animation(Motion.animation(.easeInOut(duration: 0.35), reduced: reduceMotion), value: showsBanner)
+        .onChange(of: heroFocus) { _, focus in
+            if focus != nil { inRows = false }
+        }
+        .onChange(of: model.featured.map(\.id)) { _, ids in
+            if heroIndex >= ids.count { heroIndex = 0 }
+        }
+    }
+
+    /// The banner, or the info block in its place while the rows have the
+    /// focus. The banner's buttons stay under the info block, unseen, for
+    /// up from the first row to reach.
+    @ViewBuilder private var top: some View {
+        if model.featured.isEmpty {
+            InfoBlock(info: model.info)
+        } else {
+            ZStack(alignment: .topLeading) {
+                InfoBlock(info: model.info)
+                    .opacity(showsBanner ? 0 : 1)
+                HomeHero(app: app, titles: model.featured, index: $heroIndex, shows: showsBanner,
+                         focus: $heroFocus)
+            }
+            .frame(height: showsBanner ? HomeHero.height : InfoBlock.height, alignment: .top)
+        }
     }
 }
 
-/// The backdrop of the tile with the focus, behind the whole of Home,
-/// darkened towards the info block and the rows. It changes once the
-/// focus has rested on a tile, so moving along a row doesn't flash every
-/// picture on the way, and fades from one to the next (at once under
-/// Reduce Motion). Until a tile has the focus, and for one with no
-/// backdrop, it is plain.
+/// The backdrop of the banner's title, or of the tile with the focus,
+/// behind the whole of Home, darkened towards the words and the rows. A
+/// tile's shows once the focus has rested on it, so moving along a row
+/// doesn't flash every picture on the way, and each fades into the next
+/// (at once under Reduce Motion). Without a banner, until a tile has the
+/// focus, and for one with no backdrop, it is plain.
 private struct HomeBackdrop: View {
     let app: AppModel
     let paths: [String]
+    /// Whether to wait for the focus to rest: the banner's backdrop changes at once.
+    var wait = true
     @State private var rested: [String] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -121,7 +169,7 @@ private struct HomeBackdrop: View {
         .accessibilityHidden(true)
         .task(id: paths) {
             guard paths != rested else { return }
-            try? await Task.sleep(for: .seconds(HomeModel.infoDelay))
+            if wait { try? await Task.sleep(for: .seconds(HomeModel.infoDelay)) }
             guard !Task.isCancelled else { return }
             rested = paths
         }
@@ -134,6 +182,8 @@ private struct HomeBackdrop: View {
 /// reads the tile itself, so this is hidden from it.
 private struct InfoBlock: View {
     let info: HomeInfo?
+    /// Its height, with the room above it.
+    static let height: CGFloat = 250
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
