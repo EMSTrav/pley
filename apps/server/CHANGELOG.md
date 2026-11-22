@@ -22,6 +22,17 @@ describes how they are made.
 - A Live TV source can list its groups A to Z instead of in its provider's
   order, on every app: Sort its groups A to Z, in the source's settings.
 
+### Fixed
+
+- The recommended folder layouts in Settings → Libraries are in Chinese,
+  not English.
+- Traditional Chinese calls a genre 類型 and an item 項目, not 型別 and 專案.
+- Jellyfin apps that retry after a playback error, as jellyfin-web does,
+  get the video converted and then the sound too, rather than the same
+  stream again: their requests not to copy the video or the audio
+  (`AllowVideoStreamCopy`, `AllowAudioStreamCopy`) are kept, and the sound
+  is never made again in the codec that failed.
+
 ## [0.1.14] - 2026-11-20
 
 ### Added
