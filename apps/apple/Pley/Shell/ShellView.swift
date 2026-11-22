@@ -165,8 +165,12 @@ struct ShellView: View {
         LibraryPicker.entries(libraries: shell.libraries, liveTv: shell.liveTv)
     }
 
-    /// A tab's label: the Library tab takes the name of the library it shows, or showed last.
+    /// A tab's label: the Library tab takes the name of the library it shows, or showed last;
+    /// Playlists is Listen.
     private func tabLabel(_ section: ShellSection) -> some View {
+        if section == .playlists {
+            return Label(localized("Listen"), systemImage: "headphones")
+        }
         if section == .libraries {
             let label = LibraryPicker.label(showing: shell.section, last: shell.lastLibrary, libraries: shell.libraries)
             return Label(label.title, systemImage: label.symbol)
@@ -275,7 +279,8 @@ struct ShellView: View {
         // Another library picked under the same tab is a page of its own, never the last one's.
         case .library(let id): LibraryView(app: app, libraryId: id).id(id)
         case .search: SearchView(app: app)
-        case .playlists: PlaylistsView(app: app)
+        // The iPhone's Listen holds the playlists, beside the music; the sidebar keeps Playlists.
+        case .playlists: if layout.wide { PlaylistsView(app: app) } else { ListenView(app: app) }
         case .me, .settings, .nowPlaying: MeView(app: app)
         case .liveTv: LiveTvView(app: app)
         // Apple TV's tab only: here requests are under Me.

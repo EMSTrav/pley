@@ -14,16 +14,17 @@ import Testing
     @Test func thePickerListsTheLibrariesInOrderThenLiveTV() {
         let live = LiveSummary(available: true, allowed: true, channels: 106)
         let entries = LibraryPicker.entries(libraries: libraries, liveTv: live)
-        #expect(entries.map(\.section) == [.library(1), .library(2), .library(3), .liveTv])
-        #expect(entries.map(\.detail) == ["412 movies", "38 shows", "120 artists", "106 channels"])
-        #expect(entries.map(\.symbol) == ["film", "tv", "music.note", "tv"])
-        #expect(entries.map(\.live) == [false, false, false, true])
+        // Music is under Listen.
+        #expect(entries.map(\.section) == [.library(1), .library(2), .liveTv])
+        #expect(entries.map(\.detail) == ["412 movies", "38 shows", "106 channels"])
+        #expect(entries.map(\.symbol) == ["film", "tv", "tv"])
+        #expect(entries.map(\.live) == [false, false, true])
         #expect(entries[0].spoken == "Movies, 412 movies")
         #expect(LibraryPicker.direct(entries) == nil)
         // Live TV only when it shows.
         #expect(LibraryPicker.entries(libraries: libraries, liveTv: LiveSummary(available: false, allowed: true))
-            .map(\.section) == [.library(1), .library(2), .library(3)])
-        #expect(LibraryPicker.entries(libraries: libraries, liveTv: nil).count == 3)
+            .map(\.section) == [.library(1), .library(2)])
+        #expect(LibraryPicker.entries(libraries: libraries, liveTv: nil).count == 2)
     }
 
     @Test func onePlaceToShowIsGoneToWithoutThePicker() {

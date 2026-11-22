@@ -2715,6 +2715,35 @@
         }
       }
     },
+    "Couldn't load your music" : {
+      "comment" : "The iPhone's Listen tab when it couldn't be read.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cargar tu música"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de charger votre musique"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载你的音乐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法載入你的音樂"
+          }
+        }
+      }
+    },
     "Couldn't load your playlists" : {
       "comment" : "Playlists when they didn't load.",
       "localizations" : {
@@ -5176,6 +5205,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無媒體庫"
+          }
+        }
+      }
+    },
+    "No music yet" : {
+      "comment" : "The iPhone's Listen tab with no plays, playlists or music library.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todavía no hay música"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore de musique"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有音乐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有音樂"
           }
         }
       }
