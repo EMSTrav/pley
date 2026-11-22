@@ -230,7 +230,7 @@ struct ShellView: View {
         switch section {
         case .home: HomeView(app: app)
         case .libraries: LibrariesView(app: app)
-        case .library(let id): LibraryView(app: app, libraryId: id)
+        case .library(let id): LibraryView(app: app, libraryId: id).id(id)
         case .search: SearchView(app: app)
         case .playlists: PlaylistsView(app: app)
         case .me, .settings, .nowPlaying: MeView(app: app)
@@ -439,7 +439,9 @@ struct ScreenView: View {
         case .person(let id):
             PersonView(app: app, personId: id)
         case .library(let id, let view):
+            // A library swapped in from the title's menu is a page of its own, never the last one's.
             LibraryView(app: app, libraryId: id, view: view)
+                .id("\(id) \(view ?? "")")
         case .libraries:
             LibrariesView(app: app)
         case .collection(let id):

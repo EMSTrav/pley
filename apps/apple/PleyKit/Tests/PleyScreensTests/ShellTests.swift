@@ -52,6 +52,24 @@ import Testing
         #expect(shell.section == .playlists)
     }
 
+    @Test func aLibrarysTitleMenuSwapsTheLibraryShowing() {
+        let shell = ShellModel(settings: freshSettings(), tv: false)
+        shell.setLibraries([Library(id: 1, name: "Movies", kind: .movies), Library(id: 2, name: "TV Shows", kind: .shows)])
+        // A library page opened from Libraries is replaced, not stacked.
+        shell.select(.libraries)
+        shell.open(.library(1))
+        shell.switchLibrary(to: 2)
+        #expect(shell.path(for: .libraries) == [.library(2)])
+        // On top of another page, the library opens on top.
+        shell.open(.item(7))
+        shell.switchLibrary(to: 1)
+        #expect(shell.path(for: .libraries) == [.library(2), .item(7), .library(1)])
+        // In a library's own section (the sidebar), the other library's section shows.
+        shell.select(.library(1))
+        shell.switchLibrary(to: 2)
+        #expect(shell.section == .library(2))
+    }
+
     @Test func musicHasItsOwnPages() {
         #expect(Screen.page(of: item(1, .artist)) == .artist(1))
         #expect(Screen.page(of: item(2, .album)) == .album(2))

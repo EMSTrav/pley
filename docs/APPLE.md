@@ -234,7 +234,9 @@ behind it.
   move shows at once and is saved in order; Home, the sidebar, the tabs
   and the profile's other devices follow. "Use the Server's Order" goes
   back to the server's.
-- **A library**: **Recommended** (its rows: Continue Watching, then the
+- **A library**: its title is a menu of the profile's other libraries on
+  iPhone, iPad and Mac, which shows one in its place (in a library's own
+  section, that library's section). **Recommended** (its rows: Continue Watching, then the
   collections administrators put there), **Library** (every title, in a
   grid) and **Collections** (not for music). The grid reads 100 titles
   at a time, the page showing and the next once it is 70 % through, keeps at most 2,000
@@ -243,8 +245,8 @@ behind it.
   date, duration for movies, last played, bitrate), each with its own
   order and the other one beside it; sorted by bitrate, each title's
   second line is its file ("1080p · 6.6 Mbps · 50.4 GB"). **Filter**
-  (not for music): unwatched or watched, a genre, a year, and Clear; on
-  iPhone a sheet, on iPad and Mac a menu, on Apple TV a menu in the row
+  (not for music): unwatched or watched, a genre, a year, and Clear, with
+  a dot on Filter while one is on; on iPhone a sheet, on iPad and Mac a menu, on Apple TV a menu in the row
   of buttons. A line under the tabs says how the titles are listed ("Year,
   descending · Unwatched"). Sorted by title, with more than 30 titles and
   at most 2,000, the letters "#" and A to Z jump through the grid: down
