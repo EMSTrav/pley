@@ -79,7 +79,10 @@ in to another server starts every section again at Home.
   tab per library with its name while they all fit (the first that fit
   otherwise, and a Libraries tab for the rest; a long name fits fewer),
   Playlists, Now Playing while music has a queue (a music note alone),
-  and Settings (a gear alone; it holds what Me holds elsewhere). Seven
+  and Settings (a gear alone; it holds what Me holds elsewhere, Switch
+  profile and Sign out among it). While the tabs' words wouldn't fit
+  across the screen, Playlists, then Libraries, Live TV and Discover show
+  their symbol alone until they do, so Settings stays in sight. Seven
   tabs at most show, and no more than fit the screen's width, unless the
   requests' tab, Live TV and Now Playing all show: then Libraries is an
   eighth tab and the tabs scroll, as Android TV's rail does. VoiceOver
