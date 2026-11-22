@@ -11,9 +11,11 @@ describes how they are made.
 
 ### Fixed
 
-- The recommended folder layouts in Settings → Libraries are in Chinese,
-  not English.
-- Traditional Chinese calls a genre 類型 and an item 項目, not 型別 and 專案.
+- The recommended folder layouts in Settings → Libraries are in Chinese.
+- Traditional Chinese uses the words people use in Taiwan, such as 影集 for
+  a show, 單集 for an episode, 藝人 for an artist, 類型 for a genre and 項目
+  for an item, and quotes with 「」.
+- Simplified Chinese calls an artist 艺人 everywhere.
 - Jellyfin apps that retry after a playback error, as jellyfin-web does,
   get the video converted and then the sound too, rather than the same
   stream again: their requests not to copy the video or the audio
