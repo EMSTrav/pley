@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-import { ChevronRight, Play } from "lucide-react";
+import { ChevronRight, Play, Shuffle } from "lucide-react";
 import { markGlyph } from "pley-placeholder";
 import { useChildren, useOnDeck, type ChildItem } from "@/api/hooks";
 import type { ItemDetail } from "@/api/types";
@@ -11,6 +11,7 @@ import { episodeLabel, formatDate, formatDuration, progressFraction, seasonTitle
 import { thumbCandidates } from "@/lib/images";
 import { prefetchPlay } from "@/lib/prefetchPlay";
 import { usePlayItem } from "@/lib/usePlayItem";
+import { useShuffleEpisodes } from "@/lib/videoQueue";
 import { playIntent } from "@/player/preload";
 import { MoreActions } from "./ItemActions";
 import { ItemArt, ItemPageShell, MetaLine, SectionError, Summary, WatchedButton } from "./shared";
@@ -66,6 +67,7 @@ function EpisodeRow({ ep }: { ep: ChildItem }) {
 export function SeasonView({ item }: { item: ItemDetail }) {
   const { t } = useTranslation(["item", "common"]);
   const play = usePlayItem();
+  const shuffle = useShuffleEpisodes();
   const episodes = useChildren(item.id);
   const onDeck = useOnDeck(item.id);
   const ep = onDeck.data;
@@ -108,6 +110,14 @@ export function SeasonView({ item }: { item: ItemDetail }) {
             </Button>
             {/* The device plays the episode its own Play would. */}
             {episodes.data?.length === 0 ? null : <PlayOn kind="item" cast={() => ({ item_id: item.id })} />}
+            {(episodes.data?.length ?? 0) > 1 ? (
+              <>
+                <Button size="lg" icon={<Shuffle className="size-4" />} onClick={() => void shuffle(item)}>
+                  {t("shuffle")}
+                </Button>
+                <PlayOn kind="item" label={t("shuffleOn")} icon={<Shuffle className="size-4" />} cast={() => ({ item_id: item.id, shuffle: true })} />
+              </>
+            ) : null}
             <WatchedButton item={item} />
             <MoreActions item={item} />
           </div>

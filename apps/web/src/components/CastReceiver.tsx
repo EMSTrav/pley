@@ -24,7 +24,7 @@ import {
 import { holdReports, sessionsEnded } from "@/lib/progress";
 import { playUrl, usePlayItem } from "@/lib/usePlayItem";
 import { itemUrl, playlistUrl } from "@/lib/urls";
-import { useVideoQueue } from "@/lib/videoQueue";
+import { useShuffleEpisodes, useVideoQueue } from "@/lib/videoQueue";
 import { liveUrl } from "@/pages/livetv/common";
 import { useToast } from "./Toast";
 
@@ -175,6 +175,7 @@ function useCastPlayer() {
   const play = usePlayItem();
   const audio = useOptionalAudioPlayer();
   const startQueue = useVideoQueue();
+  const shuffleEpisodes = useShuffleEpisodes();
   const toast = useToast();
   return async (cast: Cast, onPlayer: boolean) => {
     const from = t("castReceiver.playingFrom", { device: cast.from ?? t("castReceiver.anotherDevice") });
@@ -203,6 +204,8 @@ function useCastPlayer() {
           audio?.pause();
           const url = playUrl(item.id, { startMs, audio: cast.audio_index ?? null, sub: cast.subtitle_index ?? null });
           void navigate(url, { state: castState() });
+        } else if ((item.kind === "show" || item.kind === "season") && cast.shuffle) {
+          played = await shuffleEpisodes(item);
         } else {
           played = await play(item, { shuffle: cast.shuffle });
           if (played && onPlayer && MUSIC.has(item.kind)) {

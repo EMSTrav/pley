@@ -11,6 +11,8 @@ describes how they are made.
 
 ### Added
 
+- Shows and seasons have a Shuffle button, which plays their episodes in a
+  random order, each once; a show's leaves out its Specials.
 - Editions named in a movie's file or folder name without the
   `{edition-…}` tag, such as Director's Cut, Extended, Theatrical,
   Unrated, Remastered or IMAX, are versions of one movie with their names.

@@ -180,6 +180,37 @@ pub async fn children(
     Ok(Json(ItemList { items: rows.iter().map(|r| r.to_summary_with(summaries)).collect() }))
 }
 
+#[derive(Deserialize)]
+pub struct EpisodesQuery {
+    #[serde(default)]
+    shuffle: bool,
+}
+
+#[derive(Serialize)]
+pub struct EpisodeIds {
+    ids: Vec<i64>,
+}
+
+/// The episodes a show or a season plays, by id: in order, or shuffled
+/// (Shuffle on a show or a season). Ids alone, as a player's queue holds
+/// them: a long show has a thousand episodes.
+pub async fn episodes(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Query(query): Query<EpisodesQuery>,
+) -> ApiResult<Json<EpisodeIds>> {
+    let row = item_or_404(&state, user.id, id).await?;
+    if !matches!(row.kind.as_str(), "show" | "season") {
+        return Err(AppError::bad_request("only a show or a season has episodes"));
+    }
+    let mut ids = catalog::playable_episodes(&state.db, user.id, &row).await?;
+    if query.shuffle {
+        crate::util::shuffle(&mut ids);
+    }
+    Ok(Json(EpisodeIds { ids }))
+}
+
 /// "More Like This" for movies and shows (`limit`, default 20).
 pub async fn related(
     State(state): State<AppState>,

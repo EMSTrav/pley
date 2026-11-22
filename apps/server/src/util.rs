@@ -48,6 +48,16 @@ pub fn now() -> i64 {
 }
 
 /// Current unix time in milliseconds.
+/// `items` in a random order, each order as likely (Fisher-Yates), from the
+/// system's random numbers.
+pub fn shuffle<T>(items: &mut [T]) {
+    for i in (1..items.len()).rev() {
+        let mut bytes = [0u8; 8];
+        getrandom::fill(&mut bytes).expect("the system's random numbers");
+        items.swap(i, (u64::from_le_bytes(bytes) % (i as u64 + 1)) as usize);
+    }
+}
+
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or_default()
 }

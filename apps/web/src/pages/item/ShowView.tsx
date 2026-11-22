@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Play } from "lucide-react";
+import { Play, Shuffle } from "lucide-react";
 import { useChildren, useOnDeck } from "@/api/hooks";
 import type { ItemDetail } from "@/api/types";
 import { CardSkeleton, MediaCard } from "@/components/cards";
@@ -10,6 +10,7 @@ import { Button, SectionTitle } from "@/components/ui";
 import { episodeLabel } from "@/lib/format";
 import { useElementWidth } from "@/lib/hooks";
 import { usePlayItem } from "@/lib/usePlayItem";
+import { useShuffleEpisodes } from "@/lib/videoQueue";
 import { playIntent } from "@/player/preload";
 import { CastRow, CrewRows, hasCrew } from "./Credits";
 import { ExtrasRow } from "./Extras";
@@ -33,6 +34,7 @@ import {
 export function ShowView({ item }: { item: ItemDetail }) {
   const { t } = useTranslation(["item", "common"]);
   const play = usePlayItem();
+  const shuffle = useShuffleEpisodes();
   const seasons = useChildren(item.id);
   const onDeck = useOnDeck(item.id);
   const [gridRef, gridWidth] = useElementWidth<HTMLDivElement>();
@@ -82,6 +84,15 @@ export function ShowView({ item }: { item: ItemDetail }) {
             </Button>
             {/* The device plays the episode its own Play would. */}
             {item.leaf_count || ep ? <PlayOn kind="item" cast={() => ({ item_id: item.id })} /> : null}
+            {/* Every episode but the Specials, in a random order. */}
+            {(item.leaf_count ?? 0) > 1 ? (
+              <>
+                <Button size="lg" icon={<Shuffle className="size-4" />} onClick={() => void shuffle(item)}>
+                  {t("shuffle")}
+                </Button>
+                <PlayOn kind="item" label={t("shuffleOn")} icon={<Shuffle className="size-4" />} cast={() => ({ item_id: item.id, shuffle: true })} />
+              </>
+            ) : null}
             <MyListButton item={item} />
             <WatchedButton item={item} />
             <MoreActions item={item} />

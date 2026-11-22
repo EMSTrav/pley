@@ -135,6 +135,7 @@ pub fn router(state: AppState) -> Router {
         .route("/items/{id}/children", get(items::children))
         .route("/items/{id}/on-deck", get(items::on_deck))
         .route("/items/{id}/next", get(items::next))
+        .route("/items/{id}/episodes", get(items::episodes))
         .route("/items/{id}/related", get(items::related))
         .route("/items/{id}/prefetch", post(items::prefetch))
         .route("/items/{id}/progress", post(items::progress))

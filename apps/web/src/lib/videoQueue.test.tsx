@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ItemSummary } from "@/api/types";
 import { makeItem } from "@/test/fixtures";
 import { LocationDisplay, mockApi, TestProviders, testQueryClient } from "@/test/render";
-import { loadQueue, nextInQueue, queuePlayUrl, useVideoQueue } from "./videoQueue";
+import { loadQueue, nextInQueue, queuePlayUrl, useShuffleEpisodes, useVideoQueue } from "./videoQueue";
 import { encodeId } from "./ids";
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -92,6 +92,36 @@ describe("useVideoQueue", () => {
   it("says when there is nothing to play", () => {
     expect(start([show])).toBe(false);
     expect(screen.getByRole("status")).toHaveTextContent("Nothing to play");
+    expect(screen.getByTestId("location").textContent).toBe("/");
+  });
+});
+
+describe("useShuffleEpisodes", () => {
+  function shuffle(id: number) {
+    const { result } = renderHook(() => useShuffleEpisodes(), { wrapper });
+    return act(() => result.current({ id }));
+  }
+
+  it("plays the episodes the server shuffled, then goes back to the show", async () => {
+    const asked: string[] = [];
+    mockApi({
+      "GET /api/items/7/episodes": ({ path }) => {
+        asked.push(path);
+        return { ids: [31, 12, 44] };
+      },
+    });
+    await expect(shuffle(7)).resolves.toBe(true);
+
+    expect(asked).toEqual(["/api/items/7/episodes?shuffle=true"]);
+    const location = new URL(screen.getByTestId("location").textContent ?? "", "http://pley.test");
+    expect(location.pathname).toBe(`/play/${encodeId(31)}`);
+    expect(location.searchParams.get("qi")).toBe("0");
+    expect(loadQueue(location.searchParams.get("queue"))).toMatchObject({ ids: [31, 12, 44], returnTo: `/item/${encodeId(7)}` });
+  });
+
+  it("says so when there's nothing to play", async () => {
+    mockApi({ "GET /api/items/7/episodes": () => ({ ids: [] }) });
+    await expect(shuffle(7)).resolves.toBe(false);
     expect(screen.getByTestId("location").textContent).toBe("/");
   });
 });

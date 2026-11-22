@@ -304,7 +304,7 @@ async fn list_libraries(
         total += count;
     }
     if random {
-        shuffle(&mut rows);
+        crate::util::shuffle(&mut rows);
     } else if merged {
         let sort = listing::parse_sort(Some(&sort_of(q)).filter(|s| !s.is_empty()).map(String::as_str));
         let values = listing::sort_values(&state.db, &rows, &sort).await?;
@@ -314,15 +314,6 @@ async fn list_libraries(
         rows = rows.into_iter().skip(page.start).take(page.size.unwrap_or(usize::MAX)).collect();
     }
     Ok(Found { rows, total })
-}
-
-/// `rows` in a random order (Fisher-Yates), for `SortBy=Random`.
-fn shuffle(rows: &mut [ItemRow]) {
-    for i in (1..rows.len()).rev() {
-        let mut bytes = [0u8; 8];
-        getrandom::fill(&mut bytes).expect("the system's random numbers");
-        rows.swap(i, (u64::from_le_bytes(bytes) % (i as u64 + 1)) as usize);
-    }
 }
 
 /// Children of an item, as `ParentId` lists them.

@@ -352,6 +352,63 @@ async fn search_reads_slips_years_and_words_written_together() {
     assert!(search("qzxv").await.is_empty());
 }
 
+/// The titles of the items `ids` names, in its order.
+async fn titles_of(app: &TestApp, token: &str, ids: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for id in ids.as_array().unwrap() {
+        out.push(app.get(&format!("/api/items/{id}"), token).await.body["title"].as_str().unwrap().to_owned());
+    }
+    out
+}
+
+#[tokio::test]
+async fn a_show_or_a_season_plays_its_episodes_shuffled() {
+    let app = TestApp::new().await;
+    let token = app.setup_admin().await;
+    for (s, e, title) in [(1, 1, "Pilot"), (1, 2, "Second"), (1, 3, "Third"), (2, 1, "Return"), (2, 2, "Finale")] {
+        app.media_file(&format!("tv/My Show (2010)/Season {s:02}/My Show - S{s:02}E{e:02} - {title}.mkv"), 1024);
+    }
+    app.media_file("tv/My Show (2010)/Specials/My Show - S00E01 - Behind the Scenes.mkv", 1024);
+    app.media_file("movies/A Film (2001)/A Film (2001).mkv", 1024);
+    let tv = app.library(&token, "TV", "shows", "tv").await;
+    let movies = app.library(&token, "Movies", "movies", "movies").await;
+    let show = app.get(&format!("/api/libraries/{tv}/items"), &token).await.body["items"][0]["id"].as_i64().unwrap();
+    let seasons = app.get(&format!("/api/items/{show}/children"), &token).await.body["items"].clone();
+    let id_of =
+        |title: &str| seasons.as_array().unwrap().iter().find(|s| s["title"] == title).unwrap()["id"].as_i64().unwrap();
+    let (season1, specials) = (id_of("Season 1"), id_of("Specials"));
+
+    // In order: every episode but the Specials.
+    let ordered = app.get(&format!("/api/items/{show}/episodes"), &token).await;
+    assert_eq!(ordered.status, StatusCode::OK);
+    assert_eq!(titles_of(&app, &token, &ordered.body["ids"]).await, ["Pilot", "Second", "Third", "Return", "Finale"]);
+    // Shuffled: the same ones, each once, and not always in order.
+    let mut orders = std::collections::HashSet::new();
+    for _ in 0..20 {
+        let shuffled = app.get(&format!("/api/items/{show}/episodes?shuffle=true"), &token).await.body["ids"].clone();
+        let mut sorted: Vec<i64> = serde_json::from_value(shuffled.clone()).unwrap();
+        sorted.sort();
+        let mut expected: Vec<i64> = serde_json::from_value(ordered.body["ids"].clone()).unwrap();
+        expected.sort();
+        assert_eq!(sorted, expected);
+        orders.insert(shuffled.to_string());
+    }
+    assert!(orders.len() > 1, "a shuffle that never changes the order");
+
+    // A season: its own, the Specials' when that's the season shuffled.
+    let season = app.get(&format!("/api/items/{season1}/episodes?shuffle=true"), &token).await.body["ids"].clone();
+    let mut titles = titles_of(&app, &token, &season).await;
+    titles.sort();
+    assert_eq!(titles, ["Pilot", "Second", "Third"]);
+    let extra = app.get(&format!("/api/items/{specials}/episodes"), &token).await.body["ids"].clone();
+    assert_eq!(titles_of(&app, &token, &extra).await, ["Behind the Scenes"]);
+
+    // Only a show or a season.
+    let film =
+        app.get(&format!("/api/libraries/{movies}/items"), &token).await.body["items"][0]["id"].as_i64().unwrap();
+    assert_eq!(app.get(&format!("/api/items/{film}/episodes"), &token).await.status, StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn shows_progress_and_hubs() {
     let app = TestApp::new().await;

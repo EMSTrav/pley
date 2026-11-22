@@ -1776,6 +1776,7 @@ user's watch state and their access are unchanged.
 | GET | `/api/items/{id}/children` | `library` | `{ items: ItemSummary[] }` by index: a show's seasons, a season's episodes, an artist's albums, an album's tracks |
 | GET | `/api/items/{id}/on-deck` | `library` | `{ item: ItemSummary \| null }`: the episode a show's or season's *Play* starts |
 | GET | `/api/items/{id}/next` | `library` | `{ item: ItemSummary \| null }`: the episode or track after this one (autoplay) |
+| GET | `/api/items/{id}/episodes?shuffle=` | `library` | `{ ids: Id[] }`: the episodes a show or a season plays, those the user may see with a file to play, in order or, with `shuffle=true`, in a random order (Shuffle). A show's leave out its Specials (season 0), as Plex's shuffle does; the Specials season's own are its episodes. `400` for anything else |
 | GET | `/api/items/{id}/related?limit=` | `library` | `{ items: ItemSummary[] }`: "More Like This" (default 20, max 60) |
 | GET | `/api/items/{id}/images/{poster\|backdrop\|thumb}` | `library` | `image/jpeg`; query `w=<px>` (optional resize, bucketed), `v=` (cache buster, ignored) |
 | POST | `/api/items/{id}/prefetch` | `play` | `202` at once: read ahead what *Play* reads first |
@@ -4129,7 +4130,7 @@ would.
 - **`POST /api/remote/devices/{id}/cast`**, `{id}` being a `receiver_id`,
   names exactly one of `item_id`, `playlist_id` and `channel_id`;
   `start_ms` (from 0 to a day) is where a title starts, and `shuffle`
-  plays a playlist, an album or an artist shuffled. With a movie or an
+  plays a playlist, an album, an artist, a show or a season shuffled. With a movie or an
   episode, `audio_index` and `subtitle_index` (`-1`: none) are the tracks
   the remote had picked on its page, by stream index of one of its files.
   The receiver chooses the version it plays, so of a title with several
@@ -4185,8 +4186,10 @@ would.
 - **The receiver plays it**, if `receiver_id` is its own, as its own
   *Play* on that page would: a movie, an episode or a track where *Play*
   starts it (at `start_ms` when given), a show or a season its next
-  episode (On Deck), an album, an artist or a playlist what it holds in
-  order (shuffled with `shuffle`), a channel live. The tracks given are
+  episode (On Deck), or with `shuffle` its episodes in a random order
+  (`GET /api/items/{id}/episodes?shuffle=true`), an album, an artist or a
+  playlist what it holds in order (shuffled with `shuffle`), a channel
+  live. An app that can't shuffle a show yet plays its next episode. The tracks given are
   what it plays, in place of the user's saved choices for that play (a
   track its file doesn't have, of another version, leaves the choice to
   them). Its player then starts

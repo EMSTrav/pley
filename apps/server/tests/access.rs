@@ -61,6 +61,7 @@ fn item_requests(item: i64, file: i64) -> Vec<(Method, String, Option<Value>)> {
         (Method::GET, format!("/api/items/{item}/related"), None),
         (Method::GET, format!("/api/items/{item}/on-deck"), None),
         (Method::GET, format!("/api/items/{item}/next"), None),
+        (Method::GET, format!("/api/items/{item}/episodes?shuffle=true"), None),
         (Method::GET, format!("/api/items/{item}/collections"), None),
         (Method::GET, format!("/api/items/{item}/images/backdrop?w=300"), None),
         (

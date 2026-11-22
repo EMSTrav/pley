@@ -1957,6 +1957,28 @@ pub async fn in_watchlist(db: &Db, user_id: i64, item_id: i64) -> sqlx::Result<b
 
 /// The episode, track or audiobook part following `item` (crossing season
 /// and disc boundaries).
+/// The episodes of show or season `parent` that `user_id` may see and that
+/// have a file to play, in the show's order: all of a season's, and a
+/// show's without its Specials (season 0), as Plex shuffles a show. A
+/// shuffle plays them in a random order; this is what it plays.
+pub async fn playable_episodes(db: &Db, user_id: i64, parent: &ItemRow) -> sqlx::Result<Vec<i64>> {
+    let of = match parent.kind.as_str() {
+        "show" => "i.grandparent_id = ? AND p.idx IS NOT 0",
+        "season" => "i.parent_id = ?",
+        _ => return Ok(Vec::new()),
+    };
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "{ME_CTE} SELECT i.id FROM {VISIBLE_ITEMS}
+         WHERE {VISIBLE} AND i.kind = 'episode' AND {of}
+           AND EXISTS (SELECT 1 FROM media_files f WHERE f.item_id = i.id)
+         ORDER BY p.idx = 0, p.idx, i.idx IS NULL, i.idx, i.sort_title"
+    )))
+    .bind(user_id)
+    .bind(parent.id)
+    .fetch_all(&db.read)
+    .await
+}
+
 pub async fn next_item(db: &Db, item: &ItemRow) -> sqlx::Result<Option<i64>> {
     match item.kind.as_str() {
         "episode" => {

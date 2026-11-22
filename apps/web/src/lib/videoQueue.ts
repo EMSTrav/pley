@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import type { QueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { api, errorMessage } from "@/api/client";
 import { keys } from "@/api/hooks";
 import type { Id, ItemDetail, ItemSummary } from "@/api/types";
 import { useOptionalAudioPlayer } from "@/audio/AudioPlayer";
@@ -9,6 +9,7 @@ import { useToast } from "@/components/Toast";
 import { t } from "@/i18n";
 import { isPlayableVideo } from "./format";
 import { shuffled } from "./shuffle";
+import { itemUrl } from "./urls";
 import { playUrl } from "./usePlayItem";
 
 /**
@@ -69,6 +70,39 @@ export async function nextInQueue(qc: QueryClient, position: QueuePosition): Pro
   const id = position.queue.ids[position.index + 1];
   if (id == null) return null;
   return qc.fetchQuery({ queryKey: keys.item(id), queryFn: () => api.get<ItemDetail>(`/api/items/${id}`), staleTime: 0 });
+}
+
+/**
+ * Returns `shuffle(item)`: plays a show's or a season's episodes in a random
+ * order, as a queue, each once (a show's without its Specials: the server
+ * picks them, `GET /api/items/{id}/episodes?shuffle=true`). After the last
+ * it goes back to the show's or the season's page. It resolves to whether
+ * one plays; when none does, it has said why.
+ */
+export function useShuffleEpisodes() {
+  const navigate = useNavigate();
+  const audio = useOptionalAudioPlayer();
+  const toast = useToast();
+  return useCallback(
+    async (item: Pick<ItemSummary, "id">): Promise<boolean> => {
+      try {
+        const { ids } = await api.get<{ ids: Id[] }>(`/api/items/${item.id}/episodes?shuffle=true`);
+        const first = ids[0];
+        if (first == null) {
+          toast.info(t("play.nothing"));
+          return false;
+        }
+        const queue = saveQueue({ ids, returnTo: itemUrl(item.id) });
+        audio?.pause();
+        void navigate(queuePlayUrl(queue, 0, first));
+        return true;
+      } catch (err) {
+        toast.error(errorMessage(err));
+        return false;
+      }
+    },
+    [audio, navigate, toast],
+  );
 }
 
 /**

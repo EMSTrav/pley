@@ -9,6 +9,7 @@ import { endSession } from "@/lib/progress";
 import { playUrl } from "@/lib/usePlayItem";
 import { itemUrl } from "@/lib/urls";
 import { makeItem } from "@/test/fixtures";
+import { encodeId } from "@/lib/ids";
 import { apiError, LocationDisplay, mockApi, renderWithProviders, testUser, type FakeRequest } from "@/test/render";
 import { CastReceiver } from "./CastReceiver";
 
@@ -145,6 +146,15 @@ describe("CastReceiver", () => {
     expect(await screen.findByText("Nothing to play yet")).toBeInTheDocument();
     await settle();
     expect(screen.queryByText("Playing from Phone")).not.toBeInTheDocument();
+  });
+
+  it("shuffles a show it's sent to shuffle, as its own Shuffle would", async () => {
+    desktop(true);
+    mockApi({ ...handlers(), "GET /api/items/9/episodes": () => ({ ids: [12, 31] }) });
+    show();
+    send(cast({ item_id: 9, shuffle: true }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(`/play/${encodeId(12)}?queue=`));
+    expect(await screen.findByText("Playing from Phone")).toBeInTheDocument();
   });
 
   it("plays a film from where its own Play would, without a place", async () => {
