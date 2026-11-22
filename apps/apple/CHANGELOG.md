@@ -11,6 +11,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Apple TV's Home shows the backdrop of the title you rest on behind the page.
 - Home on iPhone, iPad and Mac opens on a banner of new and top rated titles, with Play,
   My List and Details, and its rows have larger titles and rounder pictures.
+- Search, before anything is typed, shows your recent searches as chips, a library's genres to
+  browse, and Discover as a card.
 - A library's collections are grouped by category, with a filter by
   category, and a collection's page shows its category. A row's See
   all, and on iPhone, iPad and Mac its title, opens its collection, and
