@@ -574,3 +574,42 @@ describe("LivePlayerPage and picture in picture", () => {
     expect(actions.get("previoustrack")).toBeNull();
   });
 });
+
+describe("LivePlayerPage in full screen", () => {
+  beforeEach(() => {
+    hlsInstances.length = 0;
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
+    Reflect.deleteProperty(HTMLVideoElement.prototype, "webkitEnterFullscreen");
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("fills the screen with the player and its controls where the browser can", async () => {
+    const user = userEvent.setup();
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
+    serve();
+    renderWithProviders(<PlayerWithEvents />, { route: "/live/5" });
+    await waitFor(() => expect(hlsInstances[0]?.calls).toContain("attachMedia"));
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills it with the video alone on the iPhone, whose Safari has nothing else", async () => {
+    const user = userEvent.setup();
+    const enter = vi.fn();
+    Object.defineProperty(HTMLVideoElement.prototype, "webkitEnterFullscreen", { configurable: true, value: enter });
+    serve();
+    const { container } = renderWithProviders(<PlayerWithEvents />, { route: "/live/5" });
+    await waitFor(() => expect(hlsInstances[0]?.calls).toContain("attachMedia"));
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
+    expect(enter).toHaveBeenCalledTimes(1);
+    expect(enter.mock.contexts[0]).toBe(container.querySelector("video"));
+  });
+});

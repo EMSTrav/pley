@@ -647,7 +647,12 @@ function LivePlayer({
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-    else void containerRef.current?.requestFullscreen?.().catch(() => undefined);
+    else if (containerRef.current?.requestFullscreen) void containerRef.current.requestFullscreen().catch(() => undefined);
+    else {
+      // The iPhone's Safari has full screen only on the video element itself.
+      const video: (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null = videoRef.current;
+      video?.webkitEnterFullscreen?.();
+    }
   }, []);
   const goBack = useCallback(() => {
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
