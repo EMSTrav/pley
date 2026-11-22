@@ -162,7 +162,9 @@ behind it.
   Apple TV, keeps the profile in use). Each profile shows its picture, or
   its initials on its color; one with a PIN asks for it (4 to 8 digits,
   typed on the number pad), one that needs its password says how to choose
-  it, and a locked one can't be chosen.
+  it, and a locked one can't be chosen. On Apple TV the profiles sit in
+  the middle of the screen, with Sign out below them (asked first, as in
+  Settings), for a profile that needs its password.
 - **Home**: the server's rows for the profile, each a line of tiles in the
   row's shape: stills for Continue Watching and episodes, posters for
   films and shows, squares for music. A tile shows its picture, its title

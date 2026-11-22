@@ -159,6 +159,9 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - English words are spelled the American way: color, favorite, program.
 - A library's page on Apple TV has more room: its top scrolls away with the titles, the
   letters run down the right of the screen, and the posters fill its width.
+- Apple TV's Who's watching has Sign out, so a profile that needs its password can be
+  signed in to with a code, and its profiles sit in the middle of the screen as round
+  pictures that grow with the focus.
 - Apple TV's pages leave less empty space at their sides.
 - Apple TV's Settings tab, with Switch profile and Sign out, no longer scrolls off the end of
   a crowded tab bar: Playlists and the tabs after it show their symbol alone until it fits.
