@@ -4847,18 +4847,21 @@ on another administrator's account, but for the `GET`s
   - `memory`: bytes in use on the machine, without what only caches files;
     `pley_memory`: its processes' resident memory; `memory_total`: the
     machine's; `cpus`: its logical processors;
-  - `net_in` and `net_out`: bytes a second the machine's network adapters
-    received and sent since the sample before, loopback aside; `pley_out`:
-    what Pley sent its clients, response bodies on every port (the web
-    app's, Plex's and Jellyfin's);
+  - `net_in` and `net_out`: bytes a second the machine's hardware network
+    adapters received and sent since the sample before (in a container,
+    its own adapters, loopback aside); `pley_out`: what Pley sent its
+    clients, response bodies on every port (the web app's, Plex's and
+    Jellyfin's);
   - `clients`: who Pley is sending to now, the busiest first (50 at most),
     `sent` in bytes a second over the last 10 seconds. `user` and `device`
     are the account and device a request signed in as ("Chrome on
     Windows"), `null` for what came with no sign-in Pley read (an app of
     the compatibility APIs, say), which then counts for the signed-in
-    client at the same `address` if there is one. `address` is the
-    client's, through proxies on this computer or network. Every field is
-    `null` for the count past 512 clients, which they share;
+    client at the same `address` if there is one. An account's requests
+    from one address count as one client, named after its busiest device
+    (a TV's app and its player). `address` is the client's, through
+    proxies on this computer or network. Every field is `null` for the
+    count past 512 clients, which they share;
   - "Pley" is the server and every process it started (a managed
     transcoder and its FFmpegs);
   - `available` is false where the system can't be sampled (Windows, Linux

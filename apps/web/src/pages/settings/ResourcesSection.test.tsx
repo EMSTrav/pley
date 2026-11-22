@@ -49,7 +49,7 @@ describe("ResourcesSection", () => {
     expect(screen.getByText("25 Mbps")).toBeInTheDocument();
 
     const list = screen.getByRole("list", { name: "Clients" });
-    expect(list).toHaveTextContent("Pley for Roku32 Mbpsana · 203.0.113.5");
+    expect(list).toHaveTextContent("ana32 MbpsPley for Roku · 203.0.113.5");
     expect(list).toHaveTextContent("198.51.100.94.0 Mbps");
     expect(screen.getByText("2 now")).toBeInTheDocument();
   });

@@ -4,7 +4,8 @@
 //! and every process it started, so a managed transcoder and its FFmpegs
 //! count too; an external transcoder, perhaps on another machine, doesn't.
 //! On the network, pley is what it sends its clients ([`crate::traffic`]),
-//! and the machine is what all its network adapters carry, loopback aside.
+//! and the machine is what its hardware network adapters carry (in a
+//! container, which sees none, its own).
 //!
 //! A sample costs a few system calls and, for the processes, one listing of
 //! them (Windows) or one read of each `/proc/<pid>/stat` (Linux): well under
@@ -265,14 +266,18 @@ impl Sampler {
 }
 
 /// Each client's speed between the oldest and newest of `totals`, the
-/// busiest first. A request whose sign-in nobody read (a player on a keyed
-/// address) counts for the signed-in client at its address, if there is one.
+/// busiest first. An account's requests from one address are one client,
+/// named after its busiest device: one device can go by two names, the
+/// app's own on its API requests ("Pley for Roku") and the one it gave its
+/// playback on its player's. A request whose sign-in nobody read (an app of
+/// the compatibility APIs, the web app's files) counts for the busiest
+/// signed-in client at its address, if there is one.
 fn client_rates(totals: &VecDeque<(Instant, HashMap<Client, u64>)>) -> Vec<ClientRate> {
     let (Some((first, oldest)), Some((last, newest))) = (totals.front(), totals.back()) else { return Vec::new() };
     let seconds = last.duration_since(*first).as_secs_f64();
     // A client missing from the oldest totals was first sent to since, and
     // one whose total went down was forgotten and counted again from 0.
-    let mut sent: HashMap<&Client, u64> = newest
+    let mut sent: Vec<(&Client, u64)> = newest
         .iter()
         .map(|(client, &total)| {
             let before = oldest.get(client).copied().unwrap_or(0);
@@ -280,23 +285,27 @@ fn client_rates(totals: &VecDeque<(Instant, HashMap<Client, u64>)>) -> Vec<Clien
         })
         .filter(|&(_, bytes)| bytes > 0)
         .collect();
-    let bare: Vec<&Client> = sent.keys().copied().filter(|c| c.user.is_none() && c.address.is_some()).collect();
-    for client in bare {
-        let named = sent
-            .keys()
-            .copied()
-            .filter(|c| c.user.is_some() && c.address == client.address)
-            .max_by_key(|c| (sent[c], c.device.clone()));
-        if let Some(named) = named {
-            let bytes = sent.remove(client).unwrap_or(0);
-            *sent.get_mut(named).expect("listed") += bytes;
+    // The busiest first, so that each joins the busiest it can.
+    sent.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let mut listed: Vec<(&Client, u64)> = Vec::new();
+    for signed_in in [true, false] {
+        for &(client, bytes) in sent.iter().filter(|(c, _)| c.user.is_some() == signed_in) {
+            let joins = client.address.and_then(|address| {
+                listed.iter().position(|(c, _)| {
+                    c.user.is_some() && c.address == Some(address) && (!signed_in || c.user == client.user)
+                })
+            });
+            match joins {
+                Some(i) => listed[i].1 += bytes,
+                None => listed.push((client, bytes)),
+            }
         }
     }
-    let mut rates: Vec<ClientRate> = sent
+    let mut rates: Vec<ClientRate> = listed
         .into_iter()
         .map(|(client, bytes)| ClientRate { client: client.clone(), sent: rate(bytes, seconds) })
         .collect();
-    rates.sort_by(|a, b| b.sent.cmp(&a.sent).then_with(|| a.client.user.cmp(&b.client.user)));
+    rates.sort_by(|a, b| b.sent.cmp(&a.sent).then_with(|| a.client.cmp(&b.client)));
     rates.truncate(MAX_CLIENTS);
     rates
 }
@@ -321,7 +330,7 @@ mod os {
 
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::NetworkManagement::IpHelper::{
-        FreeMibTable, GetIfTable2, IF_TYPE_SOFTWARE_LOOPBACK, MIB_IF_TABLE2,
+        FreeMibTable, GetIfTable2, IF_TYPE_SOFTWARE_LOOPBACK, MIB_IF_ROW2, MIB_IF_TABLE2,
     };
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
@@ -374,7 +383,10 @@ mod os {
         }
         let mut network = Network::default();
         unsafe {
-            let rows = std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize);
+            // The rows run on past the one the struct declares: no reference
+            // to that one-row array, which would cover the first alone.
+            let first = (&raw const (*table).Table).cast::<MIB_IF_ROW2>();
+            let rows = std::slice::from_raw_parts(first, (*table).NumEntries as usize);
             for row in rows {
                 let hardware = row.InterfaceAndOperStatusFlags._bitfield & 1 != 0;
                 if hardware && row.Type != IF_TYPE_SOFTWARE_LOOPBACK {
@@ -485,21 +497,39 @@ mod os {
     }
 
     pub fn network() -> Option<Network> {
-        Some(parse_net_dev(&std::fs::read_to_string("/proc/net/dev").ok()?))
+        let text = std::fs::read_to_string("/proc/net/dev").ok()?;
+        // A hardware adapter has a device behind it; bridges, bonds, VLANs,
+        // tunnels and containers' links (/sys/devices/virtual) don't.
+        Some(parse_net_dev(&text, |name| std::path::Path::new("/sys/class/net").join(name).join("device").exists()))
     }
 
     /// `/proc/net/dev`: two lines of headings, then "  eth0: received-bytes
-    /// packets … (8 fields) sent-bytes …" for each adapter.
-    pub(super) fn parse_net_dev(text: &str) -> Network {
+    /// packets … (8 fields) sent-bytes …" for each adapter. Only `hardware`
+    /// adapters count, as a byte through a bridge (Docker's, Unraid's br0), a
+    /// container's link or a VPN goes through a hardware one too; where
+    /// there is none, as in a container, which sees only its own link,
+    /// every adapter but loopback counts.
+    pub(super) fn parse_net_dev(text: &str, hardware: impl Fn(&str) -> bool) -> Network {
+        let adapters: Vec<(&str, u64, u64)> = text
+            .lines()
+            .skip(2)
+            .filter_map(|line| {
+                let (name, counts) = line.split_once(':')?;
+                let name = name.trim();
+                if name == "lo" {
+                    return None;
+                }
+                let counts: Vec<u64> = counts.split_ascii_whitespace().map(|c| c.parse().unwrap_or(0)).collect();
+                Some((name, counts.first().copied().unwrap_or(0), counts.get(8).copied().unwrap_or(0)))
+            })
+            .collect();
+        let any_hardware = adapters.iter().any(|&(name, ..)| hardware(name));
         let mut network = Network::default();
-        for line in text.lines().skip(2) {
-            let Some((name, counts)) = line.split_once(':') else { continue };
-            if name.trim() == "lo" {
-                continue;
+        for (name, received, sent) in adapters {
+            if !any_hardware || hardware(name) {
+                network.received += received;
+                network.sent += sent;
             }
-            let counts: Vec<u64> = counts.split_ascii_whitespace().map(|c| c.parse().unwrap_or(0)).collect();
-            network.received += counts.first().copied().unwrap_or(0);
-            network.sent += counts.get(8).copied().unwrap_or(0);
         }
         network
     }
@@ -623,8 +653,12 @@ mod os {
         Some(Memory { total, used: (pages * page).min(total) })
     }
 
-    /// The adapters' counts, loopback aside. They are 32-bit here, so one
-    /// passing 4 GiB reads as nothing for that sample.
+    /// Ethernet and Wi-Fi adapters' type (`IFT_ETHER`, net/if_types.h).
+    const IFT_ETHER: u8 = 0x6;
+
+    /// The Ethernet and Wi-Fi adapters' counts: a bridge, a VLAN or a VPN's
+    /// `utun` carries bytes one of them carries too. They are 32-bit here,
+    /// so one passing 4 GiB reads as nothing for that sample.
     pub fn network() -> Option<Network> {
         let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
         if unsafe { libc::getifaddrs(&mut list) } != 0 {
@@ -638,8 +672,10 @@ mod os {
             let loopback = ifa.ifa_flags & libc::IFF_LOOPBACK as u32 != 0;
             if link && !loopback && !ifa.ifa_data.is_null() {
                 let data = unsafe { &*ifa.ifa_data.cast::<libc::if_data>() };
-                network.received += u64::from(data.ifi_ibytes);
-                network.sent += u64::from(data.ifi_obytes);
+                if data.ifi_type == IFT_ETHER {
+                    network.received += u64::from(data.ifi_ibytes);
+                    network.sent += u64::from(data.ifi_obytes);
+                }
             }
             entry = ifa.ifa_next;
         }
@@ -828,10 +864,36 @@ mod tests {
         .into();
         assert_eq!(
             client_rates(&totals),
-            [ClientRate { client: ana_tv, sent: 800_200 }, ClientRate { client: stranger.clone(), sent: 5_000 }],
+            [
+                ClientRate { client: ana_tv.clone(), sent: 800_200 },
+                ClientRate { client: stranger.clone(), sent: 5_000 }
+            ],
             "the player's segments are ana's, and bo, who got nothing since, isn't listed",
         );
         assert!(client_rates(&VecDeque::new()).is_empty());
+
+        // Ana's TV names its playback "Living Room": one client, named after
+        // it. Bo, another account behind the same address, is another.
+        let ana_living_room = client(Some("ana"), Some("Living Room"), "203.0.113.5");
+        let bo_phone = client(Some("bo"), Some("Pley for Android"), "203.0.113.5");
+        let two_names: VecDeque<(Instant, HashMap<Client, u64>)> = [
+            (start, [(ana_tv.clone(), 1_000)].into()),
+            (
+                start + Duration::from_secs(10),
+                [
+                    (ana_tv.clone(), 3_000),
+                    (ana_living_room.clone(), 4_000_000),
+                    (client(None, None, "203.0.113.5"), 8_000_000),
+                    (bo_phone.clone(), 1_000_000),
+                ]
+                .into(),
+            ),
+        ]
+        .into();
+        assert_eq!(
+            client_rates(&two_names),
+            [ClientRate { client: ana_living_room, sent: 1_200_200 }, ClientRate { client: bo_phone, sent: 100_000 }],
+        );
 
         // One forgotten and counted again from 0 since the oldest totals
         // still shows what it was sent since.
@@ -870,8 +932,13 @@ mod tests {
     lo: 9999999    100    0    0    0     0          0         0  9999999     100    0    0    0     0       0          0
   eth0: 1000    10    0    0    0     0          0         0     2000      20    0    0    0     0       0          0
  wlan0:500 5 0 0 0 0 0 0 700 7 0 0 0 0 0 0
+docker0: 300 3 0 0 0 0 0 0 400 4 0 0 0 0 0 0
+vethab12: 300 3 0 0 0 0 0 0 400 4 0 0 0 0 0 0
 ";
-        assert_eq!(os::parse_net_dev(net_dev), Network { received: 1500, sent: 2700 });
+        let hardware = |name: &str| name == "eth0" || name == "wlan0";
+        assert_eq!(os::parse_net_dev(net_dev, hardware), Network { received: 1500, sent: 2700 });
+        // A container sees only its own link, which isn't hardware.
+        assert_eq!(os::parse_net_dev(net_dev, |_| false), Network { received: 2100, sent: 3500 });
         let stat = "42 (a (weird) name) S 7 42 42 0 -1 4194560 100 0 0 0 30 20 0 0 20 0 4 0 12345 1000000 250 18446744073709551615";
         let (parent, process) = os::parse_stat(42, stat, 10_000_000, 4096).unwrap();
         assert_eq!(parent, 7);

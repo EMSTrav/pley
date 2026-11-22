@@ -27,7 +27,7 @@ use serde::Serialize;
 const MAX_CLIENTS: usize = 512;
 
 /// Who a response went to.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct Client {
     /// The account the request signed in as.
     pub user: Option<String>,

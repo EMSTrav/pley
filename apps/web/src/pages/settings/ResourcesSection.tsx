@@ -247,14 +247,16 @@ function Clients({ clients }: { clients: ResourceClient[] }) {
       ) : (
         <ul className="mt-3 max-h-56 space-y-2.5 overflow-y-auto pr-1" aria-label={t("resources.clients")}>
           {clients.map((c) => {
-            const name = c.device ?? c.address ?? t("resources.others");
-            const about = [c.user, c.device ? c.address : null].filter(Boolean).join(" · ");
+            // The account first, then the device and address it is on; with no
+            // sign-in, the device or address in its place.
+            const [name = t("resources.others"), ...rest] = [c.user, c.device, c.address].filter((part): part is string => !!part);
+            const about = rest.join(" · ");
             return (
               <li key={`${c.user}|${c.device}|${c.address}`} className="flex items-center gap-3 text-sm">
                 <Monitor aria-hidden className="size-4 shrink-0 text-subtle" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="truncate font-medium text-fg" title={name}>
+                    <span className="truncate font-bold text-fg" title={name}>
                       {name}
                     </span>
                     <span className="shrink-0 font-semibold tabular-nums text-fg">{speed(c.sent)}</span>
