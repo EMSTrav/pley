@@ -163,6 +163,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The remote bar says what plays first, then "Playing on" or "Paused on" the device.
+- The iPhone's Libraries tab is now Library: a tap opens a menu of your libraries and Live TV,
+  and the tab takes the name of the one you chose.
 - English words are spelled the American way: color, favorite, program.
 - A library's page on Apple TV has more room: its top scrolls away with the titles, the
   letters run down the right of the screen, and the posters fill its width.

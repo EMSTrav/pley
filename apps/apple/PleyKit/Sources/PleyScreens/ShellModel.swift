@@ -160,7 +160,11 @@ public final class ShellModel: ObservableObject {
     /// How long a toast shows.
     public static let toastSeconds: Double = 5
 
-    @Published public private(set) var section: ShellSection
+    @Published public private(set) var section: ShellSection {
+        didSet { if LibraryPicker.underTab(section), section != .libraries { lastLibrary = section } }
+    }
+    /// The library (or Live TV) shown last under the iPhone's Library tab, which takes its name.
+    @Published public private(set) var lastLibrary: ShellSection?
     @Published public private(set) var paths: [ShellSection: [Screen]] = [:]
     @Published public var sheet: Sheet?
     @Published public private(set) var toast: Toast?
@@ -214,6 +218,7 @@ public final class ShellModel: ObservableObject {
         self.tv = tv
         sections = Self.sections(tv: tv, libraries: [])
         let last = settings.lastSection.flatMap(ShellSection.init(key:))
+        if let last, LibraryPicker.underTab(last), last != .libraries { lastLibrary = last }
         // A library's section, Live TV's and requests', wait on Home for what decides whether they show.
         if case .library = last {
             restoring = last
