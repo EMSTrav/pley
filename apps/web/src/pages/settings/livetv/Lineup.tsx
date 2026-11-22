@@ -322,17 +322,7 @@ function ChannelEditor({ channel, onClose }: { channel: LineupChannel; onClose: 
         >
           <TextInput id="ch-number" value={number} onChange={(e) => setNumber(e.target.value)} placeholder={channel.source_number ?? ""} inputMode="decimal" />
         </Field>
-        <Field
-          label={t("settings.editor.guide")}
-          htmlFor="ch-guide"
-          hint={
-            channel.matched_guide_id
-              ? t("settings.editor.guideHintMatched", { id: channel.matched_guide_id })
-              : channel.source_guide_id
-                ? t("settings.editor.guideHintSource", { id: channel.source_guide_id })
-                : t("settings.editor.guideHintNone")
-          }
-        >
+        <Field label={t("settings.editor.guide")} htmlFor="ch-guide" hint={t("settings.editor.guideHint")}>
           <TextInput
             id="ch-guide"
             value={guide}
@@ -342,7 +332,6 @@ function ChannelEditor({ channel, onClose }: { channel: LineupChannel; onClose: 
             className="font-mono"
           />
         </Field>
-        <p className="text-xs text-subtle">{t("settings.editor.guideAddress")}</p>
         <p className="text-xs text-subtle">{t("settings.editor.note")}</p>
         <button type="submit" hidden />
       </form>

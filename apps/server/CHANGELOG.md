@@ -20,7 +20,7 @@ describes how they are made.
 - Live TV's categories can be hidden for a wider guide on large screens;
   the category is then picked from the button above the guide.
 - A Live TV source can list its groups A to Z instead of in its provider's
-  order, on every app: Sort its groups A to Z, in the source's settings.
+  order, on every app: Sort groups A to Z, in the source's settings.
 
 ### Fixed
 

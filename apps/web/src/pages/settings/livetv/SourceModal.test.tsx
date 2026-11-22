@@ -38,7 +38,7 @@ describe("SourceModal", () => {
     const requests = mockApi({ "PUT /api/live/sources/7": ({ body }) => ({ ...source, ...(body as object) }) });
     renderWithProviders(<SourceModal source={source} open onClose={() => {}} />);
 
-    const sort = screen.getByRole("checkbox", { name: /Sort its groups A to Z/ });
+    const sort = screen.getByRole("checkbox", { name: /Sort groups A to Z/ });
     expect(sort).not.toBeChecked();
     await user.click(sort);
     await user.click(screen.getByRole("button", { name: "Save" }));

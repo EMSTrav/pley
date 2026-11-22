@@ -249,8 +249,8 @@
       "connections": "Connections",
       "connectionsHint": "0: no limit",
       "connectionsNote": "<strong>Connections</strong> is how many channels the provider lets the account play at once. Everyone watching the same channel shares one; a channel nobody watches gives its connection back after a few seconds.",
-      "sortGroups": "Sort its groups A to Z",
-      "sortGroupsHint": "Every app lists them this way. Off: the provider's order.",
+      "sortGroups": "Sort groups A to Z",
+      "sortGroupsHint": "Overrides the provider's group ordering",
       "failover": "When it's full, play its channels on another source",
       "failoverHint": "On a source with this on too that has the same guide channel. East and West or +1 feeds sometimes share one: give those their own.",
       "advanced": "Advanced",
@@ -344,10 +344,7 @@
       "numberHint": "Empty: the source's, {{number}}.",
       "numberHintNone": "Channels go by number, then as their source lists them.",
       "guide": "Guide channel",
-      "guideHintSource": "Its id in the guide (XMLTV). Empty: the source's, {{id}}.",
-      "guideHintMatched": "Its id in the guide (XMLTV). Empty: {{id}}, the guide's channel that matches it.",
-      "guideHintNone": "Its id in the guide (XMLTV): the source names none, and none goes by its name.",
-      "guideAddress": "Or, for a channel the source's guide lacks, the address of an XMLTV guide of its own (https://…), with # and the channel's id after it when that guide has many (…/epg-us.xml.gz#DisneyChannel.us).",
+      "guideHint": "Its id in the source's guide, or the address of another guide (add #id to pick a channel in it).",
       "note": "A new guide channel shows its programs once the guide is read again."
     },
     "account": {
