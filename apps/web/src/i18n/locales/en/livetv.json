@@ -251,6 +251,8 @@
       "connectionsNote": "<strong>Connections</strong> is how many channels the provider lets the account play at once. Everyone watching the same channel shares one; a channel nobody watches gives its connection back after a few seconds.",
       "sortGroups": "Sort its groups A to Z",
       "sortGroupsHint": "Every app lists them this way. Off: the provider's order.",
+      "failover": "When it's full, play its channels on another source",
+      "failoverHint": "On a source with this on too that has the same guide channel. East and West or +1 feeds sometimes share one: give those their own.",
       "advanced": "Advanced",
       "userAgent": "User agent",
       "userAgentHint": "Some providers play only to the app they name (VLC, say). Empty: Pley's own.",

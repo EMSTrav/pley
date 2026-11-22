@@ -42,6 +42,12 @@ const SETTINGS_KEY: &str = "live_tv";
 const MAX_PLAYLIST_BYTES: usize = 200 << 20;
 /// A guide larger than this isn't read (gzipped ones are counted as they come).
 const MAX_GUIDE_BYTES: u64 = 3 << 30;
+/// How many guides a source's channels are given by address are read, at
+/// most. They're read one after another while every source's reads wait,
+/// and hundreds of channels can each have one (epg.pw's are a channel each).
+const MAX_OWN_GUIDES: usize = 500;
+/// How many failures a source's guide error names before it counts the rest.
+const GUIDE_ERRORS_SHOWN: usize = 5;
 const MAX_PICTURE_BYTES: usize = 4 << 20;
 /// A logo larger than this isn't taken (most are a few KB; a few are photos).
 const MAX_LOGO_BYTES: usize = 1 << 20;
@@ -189,6 +195,9 @@ pub struct Source {
     pub enabled: bool,
     /// Its groups listed A to Z, not in the provider's order.
     pub sort_groups: bool,
+    /// Its channels play on another source with it too, which has the same
+    /// channel, when its connections are all in use ([`LiveTv::twins`]).
+    pub failover: bool,
     pub created_at: i64,
     pub channels_at: Option<i64>,
     pub channels_error: Option<String>,
@@ -226,6 +235,8 @@ pub struct SourceInput {
     pub enabled: bool,
     #[serde(default)]
     pub sort_groups: bool,
+    #[serde(default)]
+    pub failover: bool,
 }
 
 fn one() -> i64 {
@@ -259,6 +270,7 @@ struct SourceRow {
     max_connections: i64,
     enabled: bool,
     sort_groups: bool,
+    failover: bool,
     created_at: i64,
     channels_at: Option<i64>,
     channels_error: Option<String>,
@@ -493,6 +505,8 @@ pub struct LiveTv {
     /// locked first.
     again: Mutex<HashMap<i64, bool>>,
     tried: Mutex<HashMap<i64, Instant>>,
+    /// When each source's channels' own guides were last read.
+    own_read: Mutex<HashMap<i64, Instant>>,
     refresh_lock: tokio::sync::Mutex<()>,
     /// Every channel, in order, read once and kept until something changes:
     /// a lineup runs to tens of thousands, and every page of the apps asks.
@@ -542,6 +556,8 @@ pub(crate) struct Lineup {
     source_uids: HashMap<i64, String>,
     /// The sources whose groups are listed A to Z.
     sorted: HashSet<i64>,
+    /// The sources whose channels play on one another's when full.
+    failover: HashSet<i64>,
     /// The names as search finds them, made when first searched.
     search: std::sync::OnceLock<crate::search::Names>,
 }
@@ -695,6 +711,7 @@ impl LiveTv {
             refreshing: Mutex::default(),
             again: Mutex::default(),
             tried: Mutex::default(),
+            own_read: Mutex::default(),
             refresh_lock: tokio::sync::Mutex::new(()),
             lineup: Mutex::default(),
             reading_lineup: tokio::sync::Mutex::new(()),
@@ -831,14 +848,20 @@ impl LiveTv {
 
     async fn refresh_due(&self) {
         // A lineup changed meanwhile is read again now, not by the next app asking.
-        let _ = self.lineup().await;
+        let lineup = self.lineup().await;
+        // The sources whose channels have guides of their own, from the lineup kept.
+        let own_guided: HashSet<i64> = lineup
+            .iter()
+            .flat_map(|l| &l.rows)
+            .filter(|c| own_guide_address(c).is_some())
+            .map(|c| c.source_id)
+            .collect();
         let every = i64::from(self.settings().refresh_hours) * 3600;
         let Ok(sources) = self.source_rows().await else { return };
         for source in sources.into_iter().filter(|s| s.enabled) {
             let tried_lately = self.tried.lock().get(&source.id).is_some_and(|t| t.elapsed() < RETRY_AFTER);
             let channels_due = source.channels_at.is_none_or(|t| now() - t >= every);
-            let guided = source.effective_guide_url().is_some()
-                || self.channel_guide_addresses(source.id).await.is_ok_and(|a| !a.is_empty());
+            let guided = source.effective_guide_url().is_some() || own_guided.contains(&source.id);
             let guide_due = guided && source.guide_at.is_none_or(|t| now() - t >= every);
             if (channels_due || guide_due) && !tried_lately {
                 self.refresh(source.id, channels_due, true).await;
@@ -1056,6 +1079,7 @@ impl LiveTv {
                     max_connections: r.max_connections,
                     enabled: r.enabled,
                     sort_groups: r.sort_groups,
+                    failover: r.failover,
                     created_at: r.created_at,
                     channels_at: r.channels_at,
                     channels_error: r.channels_error,
@@ -1111,7 +1135,8 @@ impl LiveTv {
         };
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO live_sources (uid, name, kind, url, username, password, guide_url, user_agent, \
-             max_connections, enabled, sort_groups, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+             max_connections, enabled, sort_groups, failover, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(new_source_uid())
         .bind(input.name.trim())
@@ -1124,6 +1149,7 @@ impl LiveTv {
         .bind(input.max_connections)
         .bind(input.enabled)
         .bind(input.sort_groups)
+        .bind(input.failover)
         .bind(now())
         .fetch_one(&self.db.write)
         .await
@@ -1148,7 +1174,7 @@ impl LiveTv {
             || (input.enabled && !before.enabled);
         sqlx::query(
             "UPDATE live_sources SET name = ?, kind = ?, url = ?, username = ?, password = ?, guide_url = ?, \
-             user_agent = ?, max_connections = ?, enabled = ?, sort_groups = ? WHERE id = ?",
+             user_agent = ?, max_connections = ?, enabled = ?, sort_groups = ?, failover = ? WHERE id = ?",
         )
         .bind(input.name.trim())
         .bind(input.kind.as_str())
@@ -1160,17 +1186,19 @@ impl LiveTv {
         .bind(input.max_connections)
         .bind(input.enabled)
         .bind(input.sort_groups)
+        .bind(input.failover)
         .bind(id)
         .execute(&self.db.write)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+        // Before its tuners stop: a channel asked for meanwhile finds no copy on it.
+        self.changed();
         if !input.enabled {
             self.tuners.stop_source(id).await;
         }
         if reread {
             self.refresh_soon(id);
         }
-        self.changed();
         self.source(id).await
     }
 
@@ -1224,6 +1252,7 @@ impl LiveTv {
             max_connections: input.max_connections,
             enabled: true,
             sort_groups: input.sort_groups,
+            failover: input.failover,
             created_at: now(),
             channels_at: None,
             channels_error: None,
@@ -1270,8 +1299,10 @@ impl LiveTv {
         self.changed();
         // One source at a time: guides are large.
         let _one = self.refresh_lock.lock().await;
+        // Those read once more were asked for.
+        let mut scheduled = asker == Asker::Schedule;
         loop {
-            self.read_source_once(id, channels, guide).await;
+            self.read_source_once(id, channels, guide, scheduled).await;
             let next = {
                 let mut refreshing = self.refreshing.lock();
                 let next = self.again.lock().remove(&id);
@@ -1281,12 +1312,12 @@ impl LiveTv {
                 next
             };
             let Some(next_channels) = next else { break };
-            (channels, guide) = (next_channels, true);
+            (channels, guide, scheduled) = (next_channels, true, false);
         }
         self.changed();
     }
 
-    async fn read_source_once(&self, id: i64, channels: bool, guide: bool) {
+    async fn read_source_once(&self, id: i64, channels: bool, guide: bool, scheduled: bool) {
         if channels {
             let result = self.refresh_channels(id).await;
             if let Err(err) = &result {
@@ -1300,13 +1331,13 @@ impl LiveTv {
             self.changed();
         }
         if guide {
-            self.read_guide(id).await;
+            self.read_guide(id, scheduled).await;
         }
     }
 
     /// Reads a source's guide, saying in the source how it went.
-    async fn read_guide(&self, id: i64) {
-        let result = self.refresh_guide(id).await;
+    async fn read_guide(&self, id: i64, scheduled: bool) {
+        let result = self.refresh_guide(id, scheduled).await;
         match &result {
             Ok(Some(n)) => tracing::info!(source = id, programs = n, "live TV guide read"),
             Ok(None) => {}
@@ -1475,18 +1506,27 @@ impl LiveTv {
         Ok(())
     }
 
-    /// Reads the source's guide: the number of programs kept, `None` when
-    /// it has no guide.
-    async fn refresh_guide(&self, id: i64) -> anyhow::Result<Option<usize>> {
+    /// Reads the source's guide and its channels' own: the number of
+    /// programs kept, `None` when it has none. `Err` when the source's guide
+    /// can't be read, after its channels' own guides are. `scheduled`: the
+    /// read fell due, rather than being asked for.
+    async fn refresh_guide(&self, id: i64, scheduled: bool) -> anyhow::Result<Option<usize>> {
         let source = self.source_row(id).await.map_err(|e| anyhow::anyhow!("{e}"))?;
         let main = source.effective_guide_url();
-        // Nothing to read: no guide, and no channel given one of its own.
-        if main.is_none() && self.channel_guide_addresses(id).await?.is_empty() {
+        // Nothing to read: no guide, and no channel given one of its own any
+        // more, whose programs and errors go.
+        if main.is_none() && !self.has_own_guides(id).await? {
+            sqlx::query("DELETE FROM live_programs WHERE source_id = ?").bind(id).execute(&self.db.write).await?;
+            sqlx::query("UPDATE live_sources SET guide_error = NULL WHERE id = ?")
+                .bind(id)
+                .execute(&self.db.write)
+                .await?;
             return Ok(None);
         }
-        // The source's guide first: channels are listed once it's here.
+        // The source's guide first: channels are listed once it's here. One
+        // that can't be read still leaves its channels' own guides to read.
         let downloaded = match &main {
-            Some(url) => Some(self.download_guide(url, &source).await?),
+            Some(url) => Some(self.download_guide(url, &source).await),
             None => None,
         };
         // Channels set by hand until now are seen by this read: no guide read
@@ -1500,18 +1540,19 @@ impl LiveTv {
         let channels = match self.channel_rows(Some(id), true).await {
             Ok(channels) => channels,
             Err(err) => {
-                if let Some(path) = &downloaded {
+                if let Some(Ok(path)) = &downloaded {
                     let _ = tokio::fs::remove_file(path).await;
                 }
                 bail!("{err}");
             }
         };
         // Its channels' own guides, as they are now.
-        let own = own_guides(&channels);
+        let (own, left_out) = own_guides(&channels);
         let days = i64::from(self.settings().guide_days);
         let (from, to) = (now() - GUIDE_BEHIND, now() + days * 86_400);
-        let (mut programs, matches) = match downloaded {
-            Some(path) => {
+        let (mut programs, matches, main_failed) = match downloaded {
+            Some(Err(err)) => (Vec::new(), None, Some(err)),
+            Some(Ok(path)) => {
                 let channels_for_match = channels.clone();
                 let read = read_guide_file(path.clone(), from, to, move |guide_channels| {
                     let index = GuideIndex::new(guide_channels);
@@ -1534,43 +1575,110 @@ impl LiveTv {
                 })
                 .await;
                 let _ = tokio::fs::remove_file(&path).await;
-                let (guide, matches) = read?;
-                if guide.channels.is_empty() {
-                    bail!("the guide lists no channels");
+                match read {
+                    Ok((guide, _)) if guide.channels.is_empty() => {
+                        (Vec::new(), None, Some(anyhow::anyhow!("the guide lists no channels")))
+                    }
+                    Ok((guide, matches)) => (guide.programs, Some(matches), None),
+                    Err(err) => (Vec::new(), None, Some(err)),
                 }
-                (guide.programs, Some(matches))
             }
-            None => (Vec::new(), None),
+            None => (Vec::new(), None, None),
+        };
+        // A source's guide that keeps failing is tried again every half hour:
+        // its channels' own guides, read since its last refresh, wait for
+        // their next.
+        let every = Duration::from_secs(u64::from(self.settings().refresh_hours) * 3600);
+        let own_read_lately = self.own_read.lock().get(&id).is_some_and(|at| at.elapsed() < every);
+        let (own, left_out) = match &main_failed {
+            Some(_) if scheduled && own_read_lately => (Vec::new(), Vec::new()),
+            _ => (own, left_out),
+        };
+        // The source's guide failed and is all there is to read: as it went.
+        let main_failed = match main_failed {
+            Some(err) if own.is_empty() => return Err(err),
+            failed => failed,
         };
         // Then each channel's own guide: one that can't be read keeps the
-        // programs it had, and says why in the source.
-        let mut failed: Vec<(String, String)> = Vec::new();
+        // programs it had, and says why in the source. A guide that can't
+        // be read at all is one error, however many channels name it.
+        let mut errors: Vec<String> = Vec::new();
+        let unread = left_out.iter().map(|address| split_guide_address(address).0).collect::<HashSet<_>>().len();
+        match unread {
+            0 => {}
+            1 => errors
+                .push(format!("one more guide of its channels isn't read: a source reads {MAX_OWN_GUIDES} at most")),
+            n => errors
+                .push(format!("{n} more guides of its channels aren't read: a source reads {MAX_OWN_GUIDES} at most")),
+        }
+        let mut read: Vec<String> = Vec::new();
+        // Those not read keep their programs too.
+        let mut failed: Vec<String> = left_out;
         for guide in &own {
-            for (address, read) in self.read_own_guide(guide, &source, from, to).await {
-                let channel = guide.channels.iter().find(|c| c.address == address).map(|c| &c.channel);
-                let name = channel.map(ChannelRow::display_name).unwrap_or_default();
-                match read {
-                    Ok(found) => programs.extend(found),
-                    Err(err) => {
-                        tracing::warn!(source = id, "reading {name}'s own guide failed: {err:#}");
-                        failed.push((address, format!("{name}: {err:#}")));
+            let first = guide.channels.first().map(OwnGuideChannel::name).unwrap_or_default();
+            match self.read_own_guide(guide, &source, from, to).await {
+                Ok(found) => {
+                    for (given, found) in guide.channels.iter().zip(found) {
+                        match found {
+                            OwnRead::Read(found) => {
+                                programs.extend(found);
+                                read.push(given.address.clone());
+                            }
+                            OwnRead::Kept(err) => {
+                                errors.push(format!("{}: {err:#}", given.name()));
+                                failed.push(given.address.clone());
+                            }
+                            OwnRead::Cleared(err) => {
+                                errors.push(format!("{}: {err:#}", given.name()));
+                                read.push(given.address.clone());
+                            }
+                        }
                     }
+                }
+                Err(err) => {
+                    let others = guide.channels.iter().map(|c| c.channels.len()).sum::<usize>() - 1;
+                    errors.push(match others {
+                        0 => format!("{first}: {err:#}"),
+                        1 => format!("{first} and one other channel: {err:#}"),
+                        n => format!("{first} and {n} other channels: {err:#}"),
+                    });
+                    failed.extend(guide.channels.iter().map(|c| c.address.clone()));
                 }
             }
         }
+        if !own.is_empty() {
+            self.own_read.lock().insert(id, Instant::now());
+        }
+        if let Some(error) = guide_error(&errors) {
+            tracing::warn!(source = id, "reading its channels' own guides failed: {error}");
+        }
+        // The source's guide's error first.
+        let errors: Vec<String> = main_failed.iter().map(|err| format!("{err:#}")).chain(errors).collect();
         let count = programs.len();
         // The old programs go, then the new ones come in batches: the
-        // database has one writer, which others wait for meanwhile.
+        // database has one writer, which others wait for meanwhile. When the
+        // source's guide failed, its programs stay, and only the channels'
+        // own guides read now are replaced.
         let mut tx = self.db.write.begin().await?;
-        let sql = format!(
-            "DELETE FROM live_programs WHERE source_id = ? AND guide_id NOT IN ({})",
-            std::iter::once("''").chain(failed.iter().map(|_| "?")).collect::<Vec<_>>().join(", ")
-        );
-        let mut delete = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).bind(id);
-        for (address, _) in &failed {
-            delete = delete.bind(address);
+        if main_failed.is_none() {
+            let sql = format!(
+                "DELETE FROM live_programs WHERE source_id = ? AND guide_id NOT IN ({})",
+                std::iter::once("''").chain(failed.iter().map(|_| "?")).collect::<Vec<_>>().join(", ")
+            );
+            let mut delete = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).bind(id);
+            for address in &failed {
+                delete = delete.bind(address);
+            }
+            delete.execute(&mut *tx).await?;
+        } else {
+            for address in &read {
+                sqlx::query("DELETE FROM live_programs WHERE source_id = ? AND guide_id = ?")
+                    .bind(id)
+                    .bind(address)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
-        delete.execute(&mut *tx).await?;
         if let Some(matches) = &matches {
             for c in &channels {
                 sqlx::query("UPDATE live_channels SET matched_guide_id = ? WHERE id = ?")
@@ -1608,86 +1716,101 @@ impl LiveTv {
             }
             tx.commit().await?;
         }
-        let error = (!failed.is_empty()).then(|| failed.iter().map(|(_, e)| e.as_str()).collect::<Vec<_>>().join("; "));
+        // A source's guide that failed is read again soon, as it was before
+        // channels had guides of their own: its time stays.
+        if main_failed.is_some() {
+            bail!("{}", guide_error(&errors).unwrap_or_default());
+        }
         sqlx::query("UPDATE live_sources SET guide_at = ?, guide_error = ? WHERE id = ?")
             .bind(now())
-            .bind(error)
+            .bind(guide_error(&errors))
             .bind(id)
             .execute(&self.db.write)
             .await?;
         Ok(Some(count))
     }
 
-    /// The guides channels of a source were given by their addresses.
-    async fn channel_guide_addresses(&self, source: i64) -> anyhow::Result<Vec<OwnGuide>> {
-        Ok(own_guides(&self.channel_rows(Some(source), true).await.map_err(|e| anyhow::anyhow!("{e}"))?))
+    /// Whether any channel of a source is given a guide by its address.
+    async fn has_own_guides(&self, source: i64) -> anyhow::Result<bool> {
+        let channels = self.channel_rows(Some(source), true).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(channels.iter().any(|c| own_guide_address(c).is_some()))
     }
 
     /// Reads a guide channels were given by its address, once, and finds
-    /// each its channel: the one its address names after `#`, else the
-    /// guide's only channel, else the one of its id or name. Each address
-    /// gets its channel's programs as its own, or why it has none.
+    /// each address its channel: the one it names after `#`, else the
+    /// guide's only channel, else the one its channels' id or name finds,
+    /// when they all find the same one (channels given one address are one
+    /// channel). Each address, in `guide.channels`' order, gets its channel's
+    /// programs as its own, or why it has none; `Err` when the guide can't
+    /// be read at all.
     async fn read_own_guide(
         &self,
         guide: &OwnGuide,
         source: &SourceRow,
         from: i64,
         to: i64,
-    ) -> Vec<(String, anyhow::Result<Vec<xmltv::Program>>)> {
-        let failed = |err: &anyhow::Error| {
-            guide.channels.iter().map(|c| (c.address.clone(), Err(anyhow::anyhow!("{err:#}")))).collect()
-        };
-        let path = match self.download_guide(&guide.url, source).await {
-            Ok(path) => path,
-            Err(err) => return failed(&err),
-        };
-        let wanted: Vec<(Option<String>, String, String)> = guide
+    ) -> anyhow::Result<Vec<OwnRead>> {
+        let path = self.download_guide(&guide.url, source).await?;
+        // What each address names after `#`, and its channels' ids and names.
+        let wanted = guide
             .channels
             .iter()
-            .map(|c| (c.named.clone(), c.channel.guide_id.clone(), c.channel.display_name().to_owned()))
-            .collect();
+            .map(|c| {
+                let channels = c.channels.iter().map(|ch| (ch.guide_id.clone(), ch.display_name().to_owned()));
+                (c.named.clone(), channels.collect::<Vec<_>>())
+            })
+            .collect::<Vec<_>>();
         let read = read_guide_file(path.clone(), from, to, move |guide_channels| {
             let index = GuideIndex::new(guide_channels);
-            let chosen: Vec<Option<String>> = wanted
+            let find = |id: &str, name: &str| match guide_channels {
+                [only] => Some(only.id.clone()),
+                _ if index.ids.contains(id) => Some(id.to_owned()),
+                _ => index.matching(id, name).map(str::to_owned),
+            };
+            // `Err`: the channels given the address find different ones.
+            let chosen: Vec<Result<Option<String>, ()>> = wanted
                 .iter()
-                .map(|(named, id, name)| match (named, guide_channels) {
-                    (Some(named), _) => index.ids.contains(named.as_str()).then(|| named.clone()),
-                    (None, [only]) => Some(only.id.clone()),
-                    (None, _) if index.ids.contains(id.as_str()) => Some(id.clone()),
-                    (None, _) => index.matching(id, name).map(str::to_owned),
+                .map(|(named, channels)| match named {
+                    Some(named) => Ok(index.ids.contains(named.as_str()).then(|| named.clone())),
+                    None => {
+                        let found: Vec<Option<String>> = channels.iter().map(|(id, name)| find(id, name)).collect();
+                        let same = found.windows(2).all(|pair| pair[0] == pair[1]);
+                        if same { Ok(found.into_iter().next().flatten()) } else { Err(()) }
+                    }
                 })
                 .collect();
-            (chosen.iter().flatten().cloned().collect(), chosen)
+            (chosen.iter().filter_map(|c| c.clone().ok().flatten()).collect(), chosen)
         })
         .await;
         let _ = tokio::fs::remove_file(&path).await;
-        let (read, chosen) = match read {
-            Ok(read) => read,
-            Err(err) => return failed(&err),
-        };
-        guide
+        let (read, chosen) = read?;
+        Ok(guide
             .channels
             .iter()
             .zip(chosen)
-            .map(|(c, chosen)| {
-                let found = match (chosen, &c.named) {
-                    (Some(chosen), _) => Ok(read
-                        .programs
+            .map(|(c, chosen)| match (chosen, &c.named) {
+                (Ok(Some(chosen)), _) => OwnRead::Read(
+                    read.programs
                         .iter()
                         .filter(|p| p.channel == chosen)
                         .map(|p| xmltv::Program { channel: c.address.clone(), ..p.clone() })
-                        .collect()),
-                    _ if read.channels.is_empty() => Err(anyhow::anyhow!("the guide lists no channels")),
-                    (None, Some(named)) => Err(anyhow::anyhow!("the guide has no channel {named}")),
-                    (None, None) => Err(anyhow::anyhow!(
-                        "the guide has {} channels, and none is this one by its id or name: name one after # at \
-                         the address's end",
-                        read.channels.len()
-                    )),
-                };
-                (c.address.clone(), found)
+                        .collect(),
+                ),
+                // Whichever it had would be another's.
+                (Err(()), _) => OwnRead::Cleared(anyhow::anyhow!(
+                    "the guide has {} channels, and the channels given this address don't all find the same one: \
+                     name each one's after # at the address's end",
+                    read.channels.len()
+                )),
+                _ if read.channels.is_empty() => OwnRead::Kept(anyhow::anyhow!("the guide lists no channels")),
+                (Ok(None), Some(named)) => OwnRead::Kept(anyhow::anyhow!("the guide has no channel {named}")),
+                (Ok(None), None) => OwnRead::Kept(anyhow::anyhow!(
+                    "the guide has {} channels, and none is this one by its id or name: name one after # at \
+                     the address's end",
+                    read.channels.len()
+                )),
             })
-            .collect()
+            .collect())
     }
 
     async fn download(&self, url: &str, user_agent: &str, max: usize) -> anyhow::Result<Vec<u8>> {
@@ -1736,17 +1859,24 @@ impl LiveTv {
             bail!("the guide's server answered {}", resp.status());
         }
         let mut file = tokio::fs::File::create(&path).await?;
-        let mut written = 0u64;
-        while let Some(chunk) = resp.chunk().await? {
-            written += chunk.len() as u64;
-            if written > MAX_GUIDE_BYTES {
-                drop(file);
-                let _ = tokio::fs::remove_file(&path).await;
-                bail!("the guide is larger than {} GB", MAX_GUIDE_BYTES >> 30);
+        let written: anyhow::Result<()> = async {
+            let mut written = 0u64;
+            while let Some(chunk) =
+                resp.chunk().await.map_err(|e| anyhow::anyhow!("{}", redact(&describe(&e), &source.password)))?
+            {
+                written += chunk.len() as u64;
+                anyhow::ensure!(written <= MAX_GUIDE_BYTES, "the guide is larger than {} GB", MAX_GUIDE_BYTES >> 30);
+                file.write_all(&chunk).await?;
             }
-            file.write_all(&chunk).await?;
+            Ok(file.flush().await?)
         }
-        file.flush().await?;
+        .await;
+        // A guide that broke off, or was too large, leaves nothing behind.
+        if let Err(err) = written {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(err);
+        }
         Ok(path)
     }
 
@@ -1784,24 +1914,26 @@ impl LiveTv {
             .ok_or_else(|| AppError::not_found(format!("channel {id} not found")))
     }
 
-    /// The same channel on the other enabled sources: their channels with the
-    /// same guide channel (as [`ChannelRow::guide_key`] finds it), hidden ones
-    /// too (an administrator hides the copies to list a channel once), but
-    /// not offline ones. A channel without a guide channel has none.
+    /// The same channel on the other enabled sources, when its own and theirs
+    /// have `failover`: their channels with the same guide channel (as
+    /// [`ChannelRow::guide_key`] finds it), hidden ones too (an administrator
+    /// hides the copies to list a channel once), but not offline ones. A
+    /// channel without a guide channel has none. From the lineup kept.
     pub(crate) async fn twins(&self, channel: &ChannelRow) -> Result<Vec<ChannelRow>, AppError> {
         let Some(key) = channel.guide_key() else { return Ok(Vec::new()) };
-        let sql = format!(
-            "SELECT {CHANNEL_COLUMNS} FROM live_channels c JOIN live_sources s ON s.id = c.source_id \
-             WHERE c.source_id != ? AND c.missing_since IS NULL AND c.offline_since IS NULL AND s.enabled = 1 \
-             AND COALESCE(NULLIF(c.custom_guide_id, ''), NULLIF(c.matched_guide_id, ''), NULLIF(c.guide_id, '')) = ? \
-             ORDER BY c.source_id, c.position"
-        );
-        sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(channel.source_id)
-            .bind(key)
-            .fetch_all(&self.db.read)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))
+        let lineup = self.lineup().await?;
+        if !lineup.failover.contains(&channel.source_id) {
+            return Ok(Vec::new());
+        }
+        let mut twins: Vec<ChannelRow> = lineup
+            .rows
+            .iter()
+            .filter(|c| c.source_id != channel.source_id && lineup.failover.contains(&c.source_id))
+            .filter(|c| c.offline_since.is_none() && c.guide_key() == Some(key))
+            .cloned()
+            .collect();
+        twins.sort_by_key(|c| (c.source_id, c.position));
+        Ok(twins)
     }
 
     /// The channel's source: its connection limit and user agent.
@@ -1838,6 +1970,7 @@ impl LiveTv {
         let shown: Vec<bool> = rows.iter().map(|c| !c.hidden && !(hide_offline && c.offline())).collect();
         let sources = self.source_rows().await.map_err(|e| AppError::Internal(e.into()))?;
         let sorted: HashSet<i64> = sources.iter().filter(|s| s.sort_groups).map(|s| s.id).collect();
+        let failover: HashSet<i64> = sources.iter().filter(|s| s.failover).map(|s| s.id).collect();
         let mut groups: Vec<(i64, Group)> = Vec::new();
         let mut index: HashMap<&str, usize> = HashMap::new();
         for c in rows.iter().zip(&shown).filter(|(c, shown)| **shown && !c.group_name.is_empty()).map(|(c, _)| c) {
@@ -1857,8 +1990,17 @@ impl LiveTv {
                 .into_iter()
                 .collect();
         let source_uids = sources.into_iter().map(|s| (s.id, s.uid)).collect();
-        let lineup =
-            Arc::new(Lineup { rows, shown, names, groups, guided, source_uids, sorted, search: Default::default() });
+        let lineup = Arc::new(Lineup {
+            rows,
+            shown,
+            names,
+            groups,
+            guided,
+            source_uids,
+            sorted,
+            failover,
+            search: Default::default(),
+        });
         let mut kept = self.lineup.lock();
         // A change while it was read: this one is already out of date.
         if self.generation.load(Ordering::SeqCst) == generation {
@@ -2360,7 +2502,7 @@ impl LiveTv {
         tx.commit().await.map_err(|e| AppError::Internal(e.into()))?;
         if patch.hidden == Some(true) {
             for id in ids {
-                self.tuners.stop_channel(*id).await;
+                self.tuners.hide_channel(*id);
             }
         }
         self.changed();
@@ -2578,24 +2720,27 @@ fn channel_rank(search: &str, name: &str, number: Option<&str>) -> u8 {
     split_region(name).map_or(rank, |(_, rest)| rank.min(crate::search::match_rank(search, rest)))
 }
 
-/// Groups as every list shows them, each with the source it first comes
-/// from: the sources' in the lineup's order, each source's in its
-/// provider's order, or A to Z where it says so (`sort_groups`). A to Z
-/// reads past a name's leading marks ("|UK| Sport" with "UK| News") and
-/// takes numbers as numbers ("Sports 2" before "Sports 10").
+/// Groups as every list shows them, in the order they first come in the
+/// lineup, each with the source it first comes from. A source that says so
+/// (`sort_groups`) has its groups A to Z in the places they take; the
+/// others' stay where they are. A to Z reads past a name's leading marks
+/// ("|UK| Sport" with "UK| News") and takes numbers as numbers ("Sports 2"
+/// before "Sports 10").
 fn arrange_groups<T>(groups: Vec<(i64, T)>, name: impl Fn(&T) -> &str, sorted: &HashSet<i64>) -> Vec<T> {
-    let mut keyed: Vec<_> = groups
-        .into_iter()
-        .enumerate()
-        .map(|(at, (source, group))| {
-            let key = sorted.contains(&source).then(|| {
-                crate::library::parse::natural_key(name(&group).trim_start_matches(|c: char| !c.is_alphanumeric()))
-            });
-            ((source, key, at), group)
-        })
-        .collect();
-    keyed.sort_by(|(a, _), (b, _)| a.cmp(b));
-    keyed.into_iter().map(|(_, group)| group).collect()
+    let mut order: Vec<usize> = (0..groups.len()).collect();
+    for source in sorted {
+        let places: Vec<usize> = (0..groups.len()).filter(|&at| groups[at].0 == *source).collect();
+        let mut by_name = places.clone();
+        by_name.sort_by_cached_key(|&at| {
+            let name = name(&groups[at].1).trim_start_matches(|c: char| !c.is_alphanumeric());
+            (crate::library::parse::natural_key(name), at)
+        });
+        for (place, at) in places.into_iter().zip(by_name) {
+            order[place] = at;
+        }
+    }
+    let mut groups: Vec<Option<T>> = groups.into_iter().map(|(_, group)| Some(group)).collect();
+    order.into_iter().filter_map(|at| groups[at].take()).collect()
 }
 
 /// A group name's region and the rest, when it begins with one the way
@@ -2709,9 +2854,6 @@ fn normalize(name: &str) -> String {
     s
 }
 
-/// The file a guide's address names, when it names one (`/…`, `file://…`)
-/// rather than a web address: checked to be on this computer
-/// ([`local_guide`]).
 /// A guide channels were given by its address: read once, however many
 /// name it, for each of them.
 #[derive(Debug, Clone)]
@@ -2727,30 +2869,71 @@ struct OwnGuideChannel {
     address: String,
     /// The guide's channel named after `#`.
     named: Option<String>,
-    /// The first channel given the address.
-    channel: ChannelRow,
+    /// The channels given the address, which are one channel.
+    channels: Vec<ChannelRow>,
 }
 
-/// The guides `channels` were given by their addresses.
-fn own_guides(channels: &[ChannelRow]) -> Vec<OwnGuide> {
+impl OwnGuideChannel {
+    /// The channel it's named by where it went wrong: its first.
+    fn name(&self) -> &str {
+        self.channels.first().map(ChannelRow::display_name).unwrap_or_default()
+    }
+}
+
+/// What a guide read gave an address channels were given.
+enum OwnRead {
+    /// Its programs, in place of those it had.
+    Read(Vec<xmltv::Program>),
+    /// None, and why: those it had stay, for the guide may have them again.
+    Kept(anyhow::Error),
+    /// None, and why: those it had go too.
+    Cleared(anyhow::Error),
+}
+
+/// The address of a guide of its own `channel` was given, if it was.
+fn own_guide_address(channel: &ChannelRow) -> Option<&str> {
+    channel.custom_guide_id.as_deref().map(str::trim).filter(|g| is_guide_address(g))
+}
+
+/// The guides `channels` were given by their addresses, at most
+/// [`MAX_OWN_GUIDES`], and the addresses of those past it, which aren't
+/// read.
+fn own_guides(channels: &[ChannelRow]) -> (Vec<OwnGuide>, Vec<String>) {
     let mut out: Vec<OwnGuide> = Vec::new();
+    let mut left_out = Vec::new();
     for c in channels {
-        let Some(address) = c.custom_guide_id.as_deref().map(str::trim).filter(|g| is_guide_address(g)) else {
-            continue;
-        };
+        let Some(address) = own_guide_address(c) else { continue };
         let (url, named) = split_guide_address(address);
         let at = match out.iter().position(|g| g.url == url) {
             Some(at) => at,
+            None if out.len() >= MAX_OWN_GUIDES => {
+                left_out.push(address.to_owned());
+                continue;
+            }
             None => {
                 out.push(OwnGuide { url: url.to_owned(), channels: Vec::new() });
                 out.len() - 1
             }
         };
-        if !out[at].channels.iter().any(|g| g.address == address) {
-            out[at].channels.push(OwnGuideChannel { address: address.to_owned(), named, channel: c.clone() });
+        match out[at].channels.iter_mut().find(|g| g.address == address) {
+            Some(given) => given.channels.push(c.clone()),
+            None => {
+                out[at].channels.push(OwnGuideChannel { address: address.to_owned(), named, channels: vec![c.clone()] })
+            }
         }
     }
-    out
+    (out, left_out)
+}
+
+/// A source's guide error, from what went wrong reading its guides: the
+/// first few, then how many more, so many channels' guides gone at once
+/// don't make it a page long.
+fn guide_error(errors: &[String]) -> Option<String> {
+    let mut error = errors.iter().take(GUIDE_ERRORS_SHOWN).cloned().collect::<Vec<_>>().join("; ");
+    if errors.len() > GUIDE_ERRORS_SHOWN {
+        error.push_str(&format!("; and {} more", errors.len() - GUIDE_ERRORS_SHOWN));
+    }
+    (!errors.is_empty()).then_some(error)
 }
 
 /// A guide address and the channel it names after `#`
@@ -2784,11 +2967,14 @@ fn percent_decoded(text: &str) -> String {
 }
 
 /// A channel's guide given as the address of an XMLTV guide (`https://…`),
-/// rather than the id of one of its source's guide's channels.
+/// rather than the id of one of its source's guide's channels. The scheme
+/// is in any case, as addresses are (`HTTPS://…` too).
 pub(crate) fn is_guide_address(value: &str) -> bool {
     let value = value.trim();
-    (value.starts_with("https://") || value.starts_with("http://"))
-        && url::Url::parse(value).is_ok_and(|u| u.host_str().is_some())
+    let web = value
+        .split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"));
+    web && url::Url::parse(value).is_ok_and(|u| u.host_str().is_some())
 }
 
 /// Reads the XMLTV guide in the file at `path` (gzipped or not), keeping the
@@ -2821,6 +3007,9 @@ async fn read_guide_file<T: Send + 'static>(
     .await
 }
 
+/// The file a guide's address names, when it names one (`/…`, `file://…`)
+/// rather than a web address: checked to be on this computer
+/// ([`local_guide`]).
 fn guide_file(url: &str) -> Option<anyhow::Result<PathBuf>> {
     url.strip_prefix("file://").or_else(|| url.starts_with('/').then_some(url)).map(local_guide)
 }
@@ -3097,6 +3286,36 @@ mod tests {
             listed.iter().map(|(_, n)| *n).collect::<Vec<_>>(),
             "the provider's order"
         );
+        // Sources whose channels' numbers interleave keep their groups where
+        // the lineup puts them; one sorted sorts its own in their places.
+        let mixed = groups(&[(2, "News"), (1, "Zed"), (2, "Films"), (1, "Alpha")]);
+        assert_eq!(
+            arrange_groups(mixed.clone(), |n| n, &HashSet::new()),
+            ["News", "Zed", "Films", "Alpha"],
+            "the lineup's order, whatever the sources' ids"
+        );
+        assert_eq!(arrange_groups(mixed.clone(), |n| n, &HashSet::from([1])), ["News", "Alpha", "Films", "Zed"]);
+        assert_eq!(arrange_groups(mixed, |n| n, &HashSet::from([1, 2])), ["Films", "Alpha", "News", "Zed"]);
+    }
+
+    #[test]
+    fn a_guide_address_is_a_web_address_in_any_case() {
+        for address in ["https://e.test/g.xml", "HTTPS://e.test/g.xml", "Http://e.test/g.xml.gz#one.us"] {
+            assert!(is_guide_address(address), "{address}");
+        }
+        for value in ["one.us", "file:///etc/passwd", "FILE:///etc/passwd", "ftp://e.test/g.xml", "https://", "/g.xml"]
+        {
+            assert!(!is_guide_address(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn a_guide_error_names_the_first_few() {
+        assert_eq!(guide_error(&[]), None);
+        let errors: Vec<String> = (1..=8).map(|n| format!("Channel {n}: gone")).collect();
+        assert_eq!(guide_error(&errors[..2]).as_deref(), Some("Channel 1: gone; Channel 2: gone"));
+        let error = guide_error(&errors).unwrap();
+        assert!(error.starts_with("Channel 1: gone; ") && error.ends_with("Channel 5: gone; and 3 more"), "{error}");
     }
 
     #[test]

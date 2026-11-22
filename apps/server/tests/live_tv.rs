@@ -101,6 +101,17 @@ fn own_guide(name: &str) -> axum::response::Response {
             at(-300),
             at(3000)
         ),
+        // Its beginning, then, once that's on its way, the connection breaks.
+        "broken.xml" => {
+            let start = futures::stream::once(async {
+                Ok::<_, std::io::Error>(bytes::Bytes::from_static(b"<?xml version=\"1.0\"?><tv><channel id=\"x\">"))
+            });
+            let cut = futures::stream::once(async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Err(std::io::Error::other("cut"))
+            });
+            return ([(header::CONTENT_TYPE, "application/xml")], Body::from_stream(start.chain(cut))).into_response();
+        }
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     ([(header::CONTENT_TYPE, "application/xml")], xml).into_response()
@@ -491,8 +502,39 @@ async fn a_channel_takes_a_guide_of_its_own_by_its_address() {
     assert_eq!(on_now(&app, &admin, one).await["title"], "The News");
     assert_eq!(on_now(&app, &admin, two).await["title"], "Match of the Day");
 
+    // An address is one whatever the case of its scheme.
+    let upper = base.replacen("http://", "HTTP://", 1);
+    assert_eq!(set(ten, format!("{upper}/own/one.xml")).await, StatusCode::NO_CONTENT);
+    for _ in 0..100 {
+        if on_now(&app, &admin, ten).await["title"] == "Ten's Own Show" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
+
+    // Channels given one address are one channel: when they'd be different
+    // ones of its guide, neither takes the other's, and the source says
+    // to name each after #.
+    let both = app
+        .patch("/api/live/lineup", &admin, json!({"ids": [two, ten], "guide_id": format!("{base}/own/many.xml")}))
+        .await;
+    assert_eq!(both.status, StatusCode::NO_CONTENT);
+    let mut error = Value::Null;
+    for _ in 0..100 {
+        error = app.get("/api/live/sources", &admin).await.body[0]["guide_error"].clone();
+        if error.as_str().is_some_and(|e| e.contains("after #")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(error.as_str().is_some_and(|e| e.starts_with("Two HD: ") && e.contains("after #")), "{error}");
+    let tens = app.get(&format!("/api/live/channels/{ten}"), &admin).await.body;
+    assert_ne!(tens["now"]["title"], "Match of the Day", "{tens}");
+
     // A file here, or another kind of address, isn't a guide of its own.
-    for guide in ["file:///etc/passwd", "/etc/passwd", "ftp://example.com/guide.xml", "https://"] {
+    for guide in ["file:///etc/passwd", "FILE:///etc/passwd", "/etc/passwd", "ftp://example.com/guide.xml", "https://"]
+    {
         assert_eq!(set(ten, guide.into()).await, StatusCode::BAD_REQUEST, "{guide}");
     }
     assert_eq!(set(ten, "x".repeat(2049)).await, StatusCode::BAD_REQUEST);
@@ -1152,9 +1194,11 @@ async fn keyed_addresses_open_their_session_alone() {
     assert_eq!(app.call(Method::GET, &segment, None, None, &[]).await.status, StatusCode::GONE);
 }
 
-/// Two accounts with the same channels and one connection each: a channel
-/// whose own account is busy plays on the other's copy, and whoever asks
-/// for that channel next joins the copy instead of taking a third.
+/// Two accounts with the same channels and one connection each, both set to
+/// share: a channel whose own account is busy plays on the other's copy, and
+/// whoever asks for that channel next joins the copy instead of taking a
+/// third. The viewer is the channel's they asked for, to their apps and
+/// remotes, though the copy is hidden.
 #[tokio::test]
 async fn a_channel_plays_on_another_source_with_a_connection_free() {
     let (base, provider) = provider().await;
@@ -1163,11 +1207,19 @@ async fn a_channel_plays_on_another_source_with_a_connection_free() {
     let (bob, _) = app.user(&admin, "bob", json!({})).await;
     let (carol, _) = app.user(&admin, "carol", json!({})).await;
     let url = format!("{base}/list.m3u");
+    // Its guide named, so that changing the setting reads nothing again.
+    let guide = format!("{base}/guide.xml.gz");
+    let source = |name: &str, failover: bool| {
+        json!({
+            "name": name, "kind": "m3u", "url": url, "guide_url": guide, "max_connections": 1, "failover": failover
+        })
+    };
+    let mut ids = Vec::new();
     for name in ["A", "B"] {
-        let made = app
-            .post("/api/live/sources", &admin, json!({"name": name, "kind": "m3u", "url": url, "max_connections": 1}))
-            .await;
+        let made = app.post("/api/live/sources", &admin, source(name, false)).await;
         assert_eq!(made.status, StatusCode::CREATED, "{:?}", made.body);
+        assert_eq!(made.body["failover"], false, "only when asked");
+        ids.push(made.body["id"].as_i64().unwrap());
     }
     for _ in 0..100 {
         let sources = app.get("/api/live/sources", &admin).await.body;
@@ -1178,18 +1230,32 @@ async fn a_channel_plays_on_another_source_with_a_connection_free() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let channels = app.get("/api/live/channels", &admin).await.body;
-    let source_a = channels.as_array().unwrap().iter().map(|c| c["source_id"].as_i64().unwrap()).min().unwrap();
-    let on_a = |name: &str| {
-        channels.as_array().unwrap().iter().find(|c| c["name"] == name && c["source_id"] == source_a).unwrap()["id"]
+    let on = |name: &str, source: i64| {
+        channels.as_array().unwrap().iter().find(|c| c["name"] == name && c["source_id"] == source).unwrap()["id"]
             .as_i64()
             .unwrap()
     };
-    let (one, ten) = (on_a("One"), on_a("Ten"));
+    let (one, ten, ones_copy, twos_copy) =
+        (on("One", ids[0]), on("Ten", ids[0]), on("One", ids[1]), on("Two HD", ids[1]));
+    // B's copies are hidden: each channel is listed once.
+    let hidden = app.patch("/api/live/lineup", &admin, json!({"ids": [ones_copy], "hidden": true})).await;
+    assert_eq!(hidden.status, StatusCode::NO_CONTENT);
 
     // The administrator takes A's one connection with Ten.
     let (status, body) = open_stream(&app, &admin, ten, "pc").await;
     assert_eq!(status, StatusCode::OK);
     let (_, _ten_reader) = first_bytes(body).await;
+
+    // Unless both sources share, A is full.
+    let refused = app.post(&format!("/api/live/channels/{one}/watch"), &bob, json!({"client_id": "tv"})).await;
+    assert_eq!(refused.status, StatusCode::CONFLICT, "{:?}", refused.body);
+    let shared = app.put(&format!("/api/live/sources/{}", ids[0]), &admin, source("A", true)).await;
+    assert_eq!((shared.status, &shared.body["failover"]), (StatusCode::OK, &json!(true)), "{:?}", shared.body);
+    let refused = app.post(&format!("/api/live/channels/{one}/watch"), &bob, json!({"client_id": "tv"})).await;
+    assert_eq!(refused.status, StatusCode::CONFLICT, "B doesn't share yet");
+    assert_eq!(provider.opened.load(Ordering::SeqCst), 1);
+    let shared = app.put(&format!("/api/live/sources/{}", ids[1]), &admin, source("B", true)).await;
+    assert_eq!(shared.status, StatusCode::OK, "{:?}", shared.body);
 
     // Bob asks for One on A: it plays, on B's connection.
     let (status, body) = open_stream(&app, &bob, one, "tv").await;
@@ -1197,6 +1263,10 @@ async fn a_channel_plays_on_another_source_with_a_connection_free() {
     let (first, _bobs_reader) = first_bytes(body).await;
     assert_eq!(first[4], 1, "One's packets");
     assert_eq!(provider.open.load(Ordering::SeqCst), 2, "one connection on each account");
+    // His remotes see him watching One, though B's copy is hidden.
+    let sessions = app.get("/api/sessions", &bob).await.body;
+    let watching: Vec<&Value> = sessions.as_array().unwrap().iter().map(|s| &s["channel"]["id"]).collect();
+    assert_eq!(watching, [&json!(one)], "{sessions}");
 
     // Carol asks for One on A too: she joins B's tuner.
     let (status, body) = open_stream(&app, &carol, one, "phone").await;
@@ -1204,4 +1274,110 @@ async fn a_channel_plays_on_another_source_with_a_connection_free() {
     let (first, _carols_reader) = first_bytes(body).await;
     assert_eq!(first[4], 1);
     assert_eq!(provider.opened.load(Ordering::SeqCst), 2, "no third connection");
+
+    // Hiding the copy, as it is, ends nobody watching One on it.
+    let hidden = app.patch("/api/live/lineup", &admin, json!({"ids": [ones_copy], "hidden": true})).await;
+    assert_eq!(hidden.status, StatusCode::NO_CONTENT);
+    let sessions = app.get("/api/sessions", &bob).await.body;
+    assert_eq!(sessions.as_array().map(Vec::len), Some(1), "{sessions}");
+
+    // The administrator takes B's connection for Two: Bob's and Carol's
+    // players hear it about the channel they asked for.
+    let mut events = app.state.events.subscribe();
+    let taken = app
+        .post(
+            &format!("/api/live/channels/{twos_copy}/watch"),
+            &admin,
+            json!({"client_id": "pc2", "take_over": ones_copy}),
+        )
+        .await;
+    assert_eq!(taken.status, StatusCode::OK, "{:?}", taken.body);
+    let told = taken_over(&mut events);
+    assert_eq!(told.len(), 2, "{told:?}");
+    assert!(told.iter().all(|t| t["channel_id"] == one), "{told:?}");
+
+    // B's connection free again, Bob watches One on it; hiding One ends him.
+    let left = app.delete(&format!("/api/live/sessions/{}", taken.body["session_id"].as_str().unwrap()), &admin).await;
+    assert_eq!(left.status, StatusCode::NO_CONTENT);
+    let watching = app.post(&format!("/api/live/channels/{one}/watch"), &bob, json!({"client_id": "tv2"})).await;
+    assert_eq!(watching.status, StatusCode::OK, "{:?}", watching.body);
+    assert_eq!(app.get("/api/sessions", &bob).await.body[0]["channel"]["id"], one);
+    let hidden = app.patch("/api/live/lineup", &admin, json!({"ids": [one], "hidden": true})).await;
+    assert_eq!(hidden.status, StatusCode::NO_CONTENT);
+    let playlist = format!("/api/live/sessions/{}/index.m3u8", watching.body["session_id"].as_str().unwrap());
+    assert_eq!(app.get(&playlist, &bob).await.status, StatusCode::GONE);
+}
+
+/// A source whose own guide can't be read still reads its channels' own
+/// guides, and keeps the programs it had.
+#[tokio::test]
+async fn a_source_whose_guide_fails_still_reads_its_channels_own() {
+    let (base, _provider) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let input =
+        |guide: &str| json!({"name": "P", "kind": "m3u", "url": format!("{base}/list.m3u"), "guide_url": guide});
+    let added = app.post("/api/live/sources", &admin, input("")).await;
+    assert_eq!(added.status, StatusCode::CREATED, "{:?}", added.body);
+    let source_id = added.body["id"].as_i64().unwrap();
+    wait_until_read(&app, &admin).await;
+    let channels = app.get("/api/live/channels", &admin).await.body;
+    let id_of =
+        |name: &str| channels.as_array().unwrap().iter().find(|c| c["name"] == name).unwrap()["id"].as_i64().unwrap();
+    let (one, ten) = (id_of("One"), id_of("Ten"));
+    assert_eq!(on_now(&app, &admin, one).await["title"], "The News");
+
+    // Its guide goes away.
+    let changed =
+        app.put(&format!("/api/live/sources/{source_id}"), &admin, input(&format!("{base}/own/gone.xml"))).await;
+    assert_eq!(changed.status, StatusCode::OK, "{:?}", changed.body);
+    let failed = |s: &Value| s["guide_error"].as_str().is_some_and(|e| e.contains("404"));
+    for _ in 0..100 {
+        if failed(&app.get("/api/live/sources", &admin).await.body[0]) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(failed(&app.get("/api/live/sources", &admin).await.body[0]));
+
+    // A channel given a guide of its own has it all the same.
+    let set =
+        app.patch("/api/live/lineup", &admin, json!({"ids": [ten], "guide_id": format!("{base}/own/one.xml")})).await;
+    assert_eq!(set.status, StatusCode::NO_CONTENT);
+    assert_eq!(on_now(&app, &admin, ten).await["title"], "Ten's Own Show");
+    assert_eq!(on_now(&app, &admin, one).await["title"], "The News", "the programs it had stay");
+    let source = app.get("/api/live/sources", &admin).await.body[0].clone();
+    assert!(failed(&source), "{source}");
+}
+
+/// A guide whose download breaks off leaves no part of it behind.
+#[tokio::test]
+async fn a_guide_that_breaks_off_leaves_nothing_behind() {
+    let (base, _provider) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let added = app
+        .post("/api/live/sources", &admin, json!({"name": "P", "kind": "m3u", "url": format!("{base}/list.m3u")}))
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{:?}", added.body);
+    wait_until_read(&app, &admin).await;
+    let channels = app.get("/api/live/channels", &admin).await.body;
+    let ten = channels.as_array().unwrap().iter().find(|c| c["name"] == "Ten").unwrap()["id"].as_i64().unwrap();
+    let set = app
+        .patch("/api/live/lineup", &admin, json!({"ids": [ten], "guide_id": format!("{base}/own/broken.xml")}))
+        .await;
+    assert_eq!(set.status, StatusCode::NO_CONTENT);
+    let mut error = Value::Null;
+    for _ in 0..100 {
+        error = app.get("/api/live/sources", &admin).await.body[0]["guide_error"].clone();
+        if error.is_string() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // It broke off in its body, after its file was begun.
+    assert!(error.as_str().is_some_and(|e| e.starts_with("Ten: ") && e.contains("body")), "{error}");
+    let downloads = app.state.config.cache_dir().join("live").join("downloads");
+    let left: Vec<_> = std::fs::read_dir(&downloads).unwrap().flatten().map(|e| e.path()).collect();
+    assert!(left.is_empty(), "{left:?}");
 }

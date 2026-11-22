@@ -246,7 +246,12 @@ pub(crate) async fn start_watching(
     let twins = state.live.twins(&row).await?;
     let mut tunes = Vec::with_capacity(1 + twins.len());
     for channel in std::iter::once(&row).chain(&twins) {
-        let (source_name, max_connections, user_agent) = state.live.source_of(channel).await?;
+        let (source_name, max_connections, user_agent) = match state.live.source_of(channel).await {
+            Ok(source) => source,
+            // A copy whose source was deleted since the lineup was read isn't one.
+            Err(AppError::NotFound(_)) if channel.id != row.id => continue,
+            Err(err) => return Err(err),
+        };
         tunes.push(Tune { channel, source_name, max_connections, user_agent });
     }
     let watching = state.live.tuners.watch(user, &tunes, how).await?;

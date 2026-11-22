@@ -79,7 +79,7 @@ In the web and desktop apps only, for now.
   its address, such as epg.pw's, or a country's from IPTV-EPG.org with the
   channel named after `#`.
 - One connection per channel however many people watch, within the
-  provider's limit. A channel several sources carry plays on another's
+  provider's limit. A channel several sources carry can play on another's
   connection when its own source's are all in use.
 - Channels play straight from the provider when the device can, through
   the transcoder when it can't.
