@@ -1069,6 +1069,35 @@
         }
       }
     },
+    "Browse by genre" : {
+      "comment" : "Heading in Search before anything is typed: a library's genres as cards, each opening the library filtered by it.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explorar por género"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parcourir par genre"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按类型浏览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按類型瀏覽"
+          }
+        }
+      }
+    },
     "Browsing" : {
       "comment" : "Settings: the group of browsing settings.",
       "localizations" : {

@@ -13,8 +13,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   iPhone, iPad and Mac its rows have larger titles and rounder pictures. On Apple TV, left and
   right turn the banner, and it gives way to the title you rest on once you move down to the
   rows.
-- Search, before anything is typed, shows your recent searches as chips, a library's genres to
-  browse, and Discover as a card.
+- Search, before anything is typed, shows a library's genres to browse, and on iPhone, iPad
+  and Mac your recent searches as chips and Discover as a card.
 - A library's title is a menu that switches to another library, and Filter has a dot while a
   filter is on.
 - A library's collections are grouped by category, with a filter by
