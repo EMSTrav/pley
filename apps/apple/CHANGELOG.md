@@ -158,6 +158,7 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The remote bar says what plays first, then "Playing on" or "Paused on" the device.
 - English words are spelled the American way: color, favorite, program.
 - A library's page on Apple TV has more room: its top scrolls away with the titles, the
   letters run down the right of the screen, and the posters fill its width.
