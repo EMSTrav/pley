@@ -157,6 +157,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - English words are spelled the American way: color, favorite, program.
+- A library's page on Apple TV has more room: its top scrolls away with the titles, the
+  letters run down the right of the screen, and the posters fill its width.
 - Apple TV's pages leave less empty space at their sides.
 - A library's Recommended tab no longer ends with a row of every collection.
 - Requests: a sign-in from before the app could ask says "Sign in again to ask for movies
