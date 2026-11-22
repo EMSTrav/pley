@@ -85,21 +85,22 @@ extension Walk {
         _ = await Admin.call("DELETE", "/api/watchlist/\(id)")
     }
 
-    /// A library's page: its tab, or, when the tabs ran out, its row under Libraries.
+    /// A library's page: the Library tab, which is named for the library
+    /// it shows, then, when that is another, the title's menu to switch.
     func openLibraryTab(_ name: String) {
-        let tab = app.tabBars.buttons[name]
-        if tab.waitForExistence(timeout: 5) {
-            focus(tab, "the \(name) tab", first: [.up, .right, .left])
-            remote.press(.select)
-            // A library's tab chosen, the bar still fits: Search hasn't gone off the left.
-            tabsFit()
-        } else {
-            let libraries = app.tabBars.buttons["Libraries"]
-            focus(libraries, "the Libraries tab", first: [.up, .right, .left])
-            remote.press(.select)
-            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'libraries.row.' AND label BEGINSWITH %@",
-                                                       name)).firstMatch
-            select(row, "\(name) under Libraries", first: [.down])
+        let others: Set<String> = ["Search", "Home", "Discover", "Your requests", "Requests", "Live TV", "Listen",
+                                   "Now Playing", "Settings"]
+        let tab = app.tabBars.buttons.allElementsBoundByIndex.first { !others.contains($0.label) }
+        guard let tab else {
+            XCTFail("No Library tab")
+            return
+        }
+        focus(tab, "the Library tab", first: [.up, .right, .left])
+        remote.press(.select)
+        tabsFit()
+        if tab.label != name {
+            select(button("library.switch"), "the library's title", first: [.down, .up])
+            select(app.buttons[name], "\(name) in the title's menu", first: [.down, .up])
         }
         wait(element("library.tab.library"), "\(name)'s page")
     }

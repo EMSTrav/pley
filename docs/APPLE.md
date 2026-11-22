@@ -84,18 +84,16 @@ in to another server starts every section again at Home.
   ([Remote control](#remote-control)).
 - **Apple TV**: tabs across the top: Search (a magnifying glass alone,
   first, as in Apple's apps), Home, Discover (or Your requests, Requests
-  for administrators) where requests are open, Live TV when it shows, a
-  tab per library with its name while they all fit (the first that fit
-  otherwise, and a Libraries tab for the rest; a long name fits fewer),
-  Playlists, Now Playing while music has a queue (a music note alone),
-  and Settings (a gear alone; it holds what Me holds elsewhere, Switch
-  profile and Sign out among it). While the tabs' words wouldn't fit
-  across the screen, Playlists, then Libraries, Live TV and Discover show
-  their symbol alone until they do, so Settings stays in sight. Seven
-  tabs at most show, and no more than fit the screen's width, unless the
-  requests' tab, Live TV and Now Playing all show: then Libraries is an
-  eighth tab and the tabs scroll, as Android TV's rail does. VoiceOver
-  reads the symbols' names. The focus engine and the Siri Remote move
+  for administrators) where requests are open, Live TV when it shows,
+  Library (one tab for the movie and show libraries, named for the one
+  it shows: the one chosen last, the first in the profile's order before
+  any; a library's title switches to another), Listen (the playlists and
+  the music libraries, which have no tab), Now Playing while music has a
+  queue (a music note alone), and Settings (a gear alone; it holds what
+  Me holds elsewhere, Switch profile and Sign out among it). While the
+  tabs' words wouldn't fit across the screen, Listen, then Library, Live
+  TV and Discover show their symbol alone until they do, so Settings
+  stays in sight. VoiceOver reads the symbols' names. The focus engine and the Siri Remote move
   through it; Menu goes back, then to the tabs, then out of the app.
 
 **On the Mac**, the menu bar has the app's commands, and Settings (⌘,)
@@ -249,9 +247,10 @@ behind it.
   move shows at once and is saved in order; Home, the sidebar, the tabs
   and the profile's other devices follow. "Use the Server's Order" goes
   back to the server's.
-- **A library**: its title is a menu of the profile's other libraries on
-  iPhone, iPad and Mac, which shows one in its place (in a library's own
-  section, that library's section). **Recommended** (its rows: Continue Watching, then the
+- **A library**: its title is a menu of the profile's other libraries
+  (on Apple TV, its other movie and show libraries), which shows one in
+  its place (in a library's own section, that library's section).
+  **Recommended** (its rows: Continue Watching, then the
   collections administrators put there), **Library** (every title, in a
   grid) and **Collections** (not for music). The grid reads 100 titles
   at a time, the page showing and the next once it is 70 % through, keeps at most 2,000
@@ -454,16 +453,17 @@ behind it.
   titles. Play plays a collection of movies in its order as a queue;
   Shuffle starts the queue at a random movie. A collection of shows plays
   the first show's next episode (Shuffle, a random show's).
-- **Listen** (the iPhone's tab, in place of Playlists): Recently Played,
-  the albums of the profile's latest tracks in History, newest first, 12
-  at most; the profile's playlists, music and video alike, a video one
-  marked Video, with New Playlist first (and in the toolbar); Artists,
-  the first music library's, the most recently played first, with See all
-  opening the library; then each music library, opening its page. A part
-  with nothing in it is left out. Audiobooks aren't there: the server
-  gives Pley's apps no audiobook library.
-- **Playlists** (Listen's on iPhone, the sidebar's row on iPad and Mac, a
-  tab on Apple TV): the profile's playlists by title, each as a mosaic of
+- **Listen** (the iPhone's and Apple TV's tab, in place of Playlists):
+  Recently Played, the albums of the profile's latest tracks in History,
+  newest first, 12 at most; the profile's playlists, music and video
+  alike, a video one marked Video, with New Playlist first (and on
+  iPhone in the toolbar); Artists, the first music library's, the most
+  recently played first, with See all opening the library; then each
+  music library, opening its page. A part with nothing in it is left
+  out. Audiobooks aren't there: the server gives Pley's apps no
+  audiobook library.
+- **Playlists** (Listen's on iPhone and Apple TV, the sidebar's row on
+  iPad and Mac): the profile's playlists by title, each as a mosaic of
   its first four pictures with "12 items · 3h 12m", and **New Playlist**.
   A playlist's page: its mosaic, title, the count and length, a smart
   one's filter in words, **Play** and **Shuffle**, then its entries, each

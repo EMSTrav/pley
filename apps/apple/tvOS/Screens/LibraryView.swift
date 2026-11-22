@@ -2,8 +2,9 @@ import PleyModel
 import PleyScreens
 import SwiftUI
 
-/// A library's page for the sofa: its name and Recommended, Library and
-/// Collections (not for music) across the top. Recommended has the rows of
+/// A library's page for the sofa: its name (a menu of the other movie and
+/// show libraries, which switches to the one chosen) and Recommended,
+/// Library and Collections (not for music) across the top. Recommended has the rows of
 /// collections administrators put there. On Library a row of Sort, the
 /// order, Filter (with Clear while filtered) and, at the far end, Save as
 /// Smart Playlist; then the grid, read 100 titles at a time, with the
@@ -57,10 +58,7 @@ struct LibraryView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 20) {
-                Text(model.title)
-                    .font(.title2.bold())
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
+                title
                     .padding(.trailing, 28)
                 if model.tabs.count > 1 {
                     ForEach(model.tabs, id: \.self) { tab in
@@ -89,6 +87,39 @@ struct LibraryView: View {
         }
         .padding(.horizontal, Metrics.gutter)
         .padding(.top, 20)
+    }
+
+    /// The movie and show libraries the title's menu switches between.
+    private var others: [Library] {
+        let video = app.shell.libraries.filter { $0.kind != .music }
+        return video.contains { $0.id == model.libraryId } && video.count > 1 ? video : []
+    }
+
+    /// The library's name; with other movie and show libraries, a menu of
+    /// them that switches to the one chosen (`ShellModel.switchLibrary`).
+    @ViewBuilder private var title: some View {
+        if others.isEmpty {
+            Text(model.title)
+                .font(.title2.bold())
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+        } else {
+            Menu {
+                ForEach(others) { library in
+                    Button(library.id == model.libraryId ? "\(library.name) ✓" : library.name) {
+                        if library.id != model.libraryId { app.shell.switchLibrary(to: library.id) }
+                    }
+                }
+            } label: {
+                Label(model.title, systemImage: "chevron.down")
+                    .font(.title2.bold())
+                    .lineLimit(1)
+            }
+            .accessibilityLabel(model.title)
+            .accessibilityHint("Switches to another library")
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("library.switch")
+        }
     }
 
     /// Shows `tab`, and keeps the focus on its button in the page made anew.

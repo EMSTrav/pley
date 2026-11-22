@@ -4542,6 +4542,35 @@
         }
       }
     },
+    "Listen" : {
+      "comment" : "The iPhone's tab for music and playlists, in place of Playlists.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuchar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écouter"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收听"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收聽"
+          }
+        }
+      }
+    },
     "Live TV" : {
       "comment" : "A section, a search group, and Now Playing's title for a channel without a name.",
       "localizations" : {
