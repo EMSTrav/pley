@@ -10,6 +10,9 @@ describes how they are made.
 
 ### Fixed
 
+- A video whose audio the device can't decode (Dolby Atmos in E-AC-3 on
+  some phones) plays with the audio converted by the server, or another
+  track, instead of failing after a transcode.
 - The recommended folder layouts in Chinese put the year in (年份) and
   call the season folder Season 01.
 - Traditional Chinese uses the words people use in Taiwan, such as 影集 for

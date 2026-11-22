@@ -11,6 +11,16 @@ describes how they are made.
 
 ### Added
 
+- A Live TV channel its source's guide lacks can take a guide of its own:
+  the address of an XMLTV guide, in its Guide channel in the lineup, with
+  `#` and the channel's id after it for a guide of many channels.
+- A Live TV channel whose source has all its connections in use can play
+  on another source that has the same channel and a connection free: When
+  it's full, play its channels on another source, in both sources' settings.
+- Live TV's categories can be hidden for a wider guide on large screens;
+  the category is then picked from the button above the guide.
+- A Live TV source can list its groups A to Z instead of in its provider's
+  order, on every app: Sort groups A to Z, in the source's settings.
 - The dashboard charts the network next to the CPU and memory, and lists who
   Pley is sending to and how fast.
 
