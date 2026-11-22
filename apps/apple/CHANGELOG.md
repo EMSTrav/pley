@@ -8,6 +8,7 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Apple TV's Home shows the backdrop of the title you rest on behind the page.
 - A library's collections are grouped by category, with a filter by
   category, and a collection's page shows its category. A row's See
   all, and on iPhone, iPad and Mac its title, opens its collection, and
@@ -156,6 +157,7 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - English words are spelled the American way: color, favorite, program.
+- Apple TV's pages leave less empty space at their sides.
 - A library's Recommended tab no longer ends with a row of every collection.
 - Requests: a sign-in from before the app could ask says "Sign in again to ask for movies
   and shows" without a second line, and its button reads Sign in.

@@ -192,7 +192,9 @@ behind it.
   (⌘R). Choosing a tile opens its page. On Apple TV, above the rows, what the
   tile with the focus is: its title (a show's, for an episode), the
   episode, the year, rating, running time and quality, the time left, and
-  once the focus rests 0.3 s, its summary in three lines.
+  once the focus rests 0.3 s, its summary in three lines and its backdrop
+  (its show's, for an episode) behind the whole page, darkened under the
+  words and the rows.
 - **A title's actions**: a long press on a tile (iPhone, iPad and Apple TV,
   with Select), or a right-click or Control-click on the Mac, opens its
   menu; VoiceOver offers the same list as actions. By kind: Play, or
