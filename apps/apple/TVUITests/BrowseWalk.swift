@@ -85,20 +85,15 @@ extension Walk {
         _ = await Admin.call("DELETE", "/api/watchlist/\(id)")
     }
 
-    /// A library's page: the Library tab, which is named for the library
-    /// it shows, then, when that is another, the title's menu to switch.
+    /// A library's page: the Libraries tab, then, when it shows another
+    /// library, the title's menu to switch.
     func openLibraryTab(_ name: String) {
-        let others: Set<String> = ["Search", "Home", "Discover", "Your requests", "Requests", "Live TV", "Listen",
-                                   "Now Playing", "Settings"]
-        let tab = app.tabBars.buttons.allElementsBoundByIndex.first { !others.contains($0.label) }
-        guard let tab else {
-            XCTFail("No Library tab")
-            return
-        }
-        focus(tab, "the Library tab", first: [.up, .right, .left])
+        let tab = app.tabBars.buttons["Libraries"]
+        focus(tab, "the Libraries tab", first: [.up, .right, .left])
         remote.press(.select)
         tabsFit()
-        if tab.label != name {
+        let title = button("library.switch")
+        if title.waitForExistence(timeout: 10), title.label != name {
             select(button("library.switch"), "the library's title", first: [.down, .up])
             select(app.buttons[name], "\(name) in the title's menu", first: [.down, .up])
         }

@@ -160,23 +160,22 @@ import Testing
                 #expect(Array(tabs.suffix(end.count)) == end)
                 #expect(tabs.contains(.liveTv) == live)
                 if live { #expect(tabs[2] == .liveTv) }
-                // One Library tab for them all; none without a library to show.
+                // One Libraries tab for them all; none without a library to show.
                 #expect(tabs.contains(.libraries) == (count > 0))
                 #expect(!tabs.contains { if case .library = $0 { true } else { false } })
             }
         }
-        // Music is under Listen: music libraries alone make no Library tab.
+        // Music is under Listen: music libraries alone make no Libraries tab.
         let music = [Library(id: 3, name: "Music", kind: .music)]
         #expect(ShellModel.sections(tv: true, libraries: music) == [.search, .home, .playlists, .settings])
-        // The Library tab takes room for the longest name it may show, never music's.
-        let named = [Library(id: 1, name: "Movies", kind: .movies), Library(id: 2, name: "Documentaries", kind: .movies),
-                     Library(id: 3, name: "Classical and Jazz", kind: .music)]
-        #expect(ShellModel.tabWidth(.libraries, libraries: named) == "Documentaries".count + ShellModel.tabPadding)
-        // Discover and Live TV beside a long name: Listen, then Library, give up their words first.
+        // The tab is Libraries whatever library it shows.
+        let named = [Library(id: 1, name: "Movies", kind: .movies), Library(id: 2, name: "Documentaries", kind: .movies)]
+        #expect(ShellModel.tabWidth(.libraries, libraries: named) == "Libraries".count + ShellModel.tabPadding)
+        // Discover, Live TV and Now Playing: Listen gives up its words first.
         let discover = RequestsEntry(discover: true, requests: true)
         let long = [Library(id: 1, name: "Documentaries and Concerts", kind: .movies)]
-        let crowded = ShellModel.sections(tv: true, libraries: long, liveTv: true, requests: discover)
-        #expect(crowded == [.search, .home, .requests, .liveTv, .libraries, .playlists, .settings])
+        let crowded = ShellModel.sections(tv: true, libraries: long, liveTv: true, nowPlaying: true, requests: discover)
+        #expect(crowded == [.search, .home, .requests, .liveTv, .libraries, .playlists, .nowPlaying, .settings])
         let symbols = ShellModel.symbolOnly(crowded, libraries: long, requests: discover)
         #expect(symbols.contains(.playlists) && !symbols.contains(.home))
         let shown = crowded.reduce(0) {
@@ -412,7 +411,7 @@ import Testing
                       settings: settings, tv: true)
         await app.start()
         #expect(app.shell.section == .search)
-        // The fixture's libraries are under one Library tab.
+        // The fixture's libraries are under one Libraries tab.
         #expect(await eventually { app.shell.sections.contains(.libraries) })
         #expect(app.shell.section == .search)
     }

@@ -163,7 +163,8 @@ public final class ShellModel: ObservableObject {
     @Published public private(set) var section: ShellSection {
         didSet { if Self.underLibraryTab(section, tv: tv), section != .libraries { lastLibrary = section } }
     }
-    /// The library (or Live TV, on iPhone) shown last under the Library tab, which takes its name.
+    /// The library (or Live TV, on iPhone) shown last under the iPhone's
+    /// Library tab, which takes its name, or Apple TV's Libraries tab.
     @Published public private(set) var lastLibrary: ShellSection?
     @Published public private(set) var paths: [ShellSection: [Screen]] = [:]
     @Published public var sheet: Sheet?
@@ -172,7 +173,7 @@ public final class ShellModel: ObservableObject {
     /// iPad's in a narrow window), or Apple TV's tabs across the top.
     @Published public private(set) var sections: [ShellSection]
     /// The libraries, in the profile's order: the sidebar's rows, and what
-    /// Apple TV's Library tab switches between.
+    /// Apple TV's Libraries tab switches between.
     @Published public private(set) var libraries: [Library] = []
     /// Live TV on the open server for this profile (`GET /api/live`);
     /// `nil` while not known. It shows when it is `available`.
@@ -208,7 +209,7 @@ public final class ShellModel: ObservableObject {
 
     /// The shell on this device, opening on the section shown last: on
     /// iPhone, iPad and Mac, Home, Libraries, Search, Playlists and Me (the
-    /// Android phone's five); on Apple TV, Search, Home, Library, Listen
+    /// Android phone's five); on Apple TV, Search, Home, Libraries, Listen
     /// and Settings.
     public init(settings: AppSettings = AppSettings(), tv: Bool = ShellModel.isTV) {
         self.settings = settings
@@ -240,7 +241,7 @@ public final class ShellModel: ObservableObject {
     /// The tabs of a shell, with `libraries`, Live TV when it shows, the
     /// way into requests (`requests`) and Now Playing while music has a
     /// queue. On Apple TV: Search, Home, Discover or the requests, Live TV,
-    /// Library (while there is a movie or show library: one tab for them
+    /// Libraries (while there is a movie or show library: one tab for them
     /// all, showing the one chosen last), Listen (the Playlists tab, which
     /// has the music libraries), Now Playing and Settings.
     public static func sections(tv: Bool, libraries: [Library], liveTv: Bool = false, nowPlaying: Bool = false,
@@ -252,9 +253,9 @@ public final class ShellModel: ObservableObject {
         return start + library + [.playlists] + (nowPlaying ? [.nowPlaying] : []) + [.settings]
     }
 
-    /// Whether `section` shows under the Library tab: on Apple TV a movie
-    /// or show library's (Live TV has its own tab); on iPhone the
-    /// picker's places (`LibraryPicker.underTab`).
+    /// Whether `section` shows under the Library tab: on Apple TV (its
+    /// Libraries tab) a movie or show library's, as Live TV has its own
+    /// tab; on iPhone the picker's places (`LibraryPicker.underTab`).
     static func underLibraryTab(_ section: ShellSection, tv: Bool) -> Bool {
         guard tv else { return LibraryPicker.underTab(section) }
         switch section {
@@ -263,13 +264,13 @@ public final class ShellModel: ObservableObject {
         }
     }
 
-    /// Apple TV's Library tab chosen: the library shown last under it,
+    /// Apple TV's Libraries tab chosen: the library shown last under it,
     /// else the first movie or show library in the profile's order.
     public func openLibraryTab() {
         select(libraryTabSection)
     }
 
-    /// What Apple TV's Library tab shows: the library showing, or shown
+    /// What Apple TV's Libraries tab shows: the library showing, or shown
     /// last, else the first movie or show library; Libraries without one.
     public var libraryTabSection: ShellSection {
         if case .library = section, shows(section) { return section }
@@ -301,9 +302,7 @@ public final class ShellModel: ObservableObject {
         if symbolTabs.contains(section) { return tabPadding }
         let title = switch section {
         case .home: localized("Home")
-        // Apple TV's Library tab takes the name of the library it shows: room for the longest.
-        case .libraries:
-            libraries.filter { $0.kind != .music }.map(\.name).max { $0.count < $1.count } ?? localized("Library")
+        case .libraries: localized("Libraries")
         case .playlists: localized("Listen")
         case .liveTv: localized("Live TV")
         case .requests: requestsTitle(requests)

@@ -85,13 +85,13 @@ in to another server starts every section again at Home.
 - **Apple TV**: tabs across the top: Search (a magnifying glass alone,
   first, as in Apple's apps), Home, Discover (or Your requests, Requests
   for administrators) where requests are open, Live TV when it shows,
-  Library (one tab for the movie and show libraries, named for the one
-  it shows: the one chosen last, the first in the profile's order before
-  any; a library's title switches to another), Listen (the playlists and
+  Libraries (one tab for the movie and show libraries, showing the one
+  chosen last, the first in the profile's order before any; a library's
+  title switches to another), Listen (the playlists and
   the music libraries, which have no tab), Now Playing while music has a
   queue (a music note alone), and Settings (a gear alone; it holds what
   Me holds elsewhere, Switch profile and Sign out among it). While the
-  tabs' words wouldn't fit across the screen, Listen, then Library, Live
+  tabs' words wouldn't fit across the screen, Listen, then Libraries, Live
   TV and Discover show their symbol alone until they do, so Settings
   stays in sight. VoiceOver reads the symbols' names. The focus engine and the Siri Remote move
   through it; Menu goes back, then to the tabs, then out of the app.
