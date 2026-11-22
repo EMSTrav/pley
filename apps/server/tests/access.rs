@@ -130,6 +130,9 @@ async fn all_hidden(app: &TestApp, token: &str, item: i64, file: i64, title: &st
         assert_eq!(reply.status, StatusCode::NOT_FOUND, "{method} {uri}: {}", reply.text());
         assert!(!reply.mentions(title), "{method} {uri} leaks {title}");
     }
+    // Asked for among others, it is left out.
+    let many = app.get(&format!("/api/items?ids={item}"), token).await;
+    assert_eq!((many.status, &many.body), (StatusCode::OK, &json!({"items": []})), "{title} by id");
     let (id, me, source) = (app.jf_item(item), app.jf_user(token).await, app.jf_source(file, token).await);
     for (method, uri, body) in jellyfin_requests(&id, &me, &source) {
         let reply = app.jf(method.clone(), &uri, token, body).await;

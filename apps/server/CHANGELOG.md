@@ -13,6 +13,9 @@ describes how they are made.
 
 - Shows and seasons have a Shuffle button, which plays their episodes in a
   random order, each once; a show's leaves out its Specials.
+- The web player has an Episodes button that lists the season playing, or
+  the whole queue for a shuffle, playlist or collection, to jump to any of
+  them, and a Previous button beside Next.
 - Editions named in a movie's file or folder name without the
   `{edition-…}` tag, such as Director's Cut, Extended, Theatrical,
   Unrated, Remastered or IMAX, are versions of one movie with their names.

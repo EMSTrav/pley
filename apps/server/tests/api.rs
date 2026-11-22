@@ -397,11 +397,23 @@ async fn a_show_or_a_season_plays_its_episodes_shuffled() {
 
     // A season: its own, the Specials' when that's the season shuffled.
     let season = app.get(&format!("/api/items/{season1}/episodes?shuffle=true"), &token).await.body["ids"].clone();
-    let mut titles = titles_of(&app, &token, &season).await;
-    titles.sort();
-    assert_eq!(titles, ["Pilot", "Second", "Third"]);
+    let mut in_season = titles_of(&app, &token, &season).await;
+    in_season.sort();
+    assert_eq!(in_season, ["Pilot", "Second", "Third"]);
     let extra = app.get(&format!("/api/items/{specials}/episodes"), &token).await.body["ids"].clone();
     assert_eq!(titles_of(&app, &token, &extra).await, ["Behind the Scenes"]);
+
+    // Several by id, as a player's queue shows them: in the order asked,
+    // those there are, at most 200 at once.
+    let ids = &ordered.body["ids"];
+    let (first, last) = (ids[0].as_i64().unwrap(), ids[4].as_i64().unwrap());
+    let many = app.get(&format!("/api/items?ids={last},999999,{first}"), &token).await;
+    assert_eq!(many.status, StatusCode::OK);
+    assert_eq!(titles(&many.body["items"]), ["Finale", "Pilot"]);
+    let too_many = (0..201).map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+    assert_eq!(app.get(&format!("/api/items?ids={too_many}"), &token).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(app.get("/api/items?ids=1,two", &token).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(app.get("/api/items", &token).await.body, json!({"items": []}));
 
     // Only a show or a season.
     let film =

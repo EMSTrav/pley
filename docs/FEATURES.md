@@ -65,6 +65,7 @@ In the web and desktop apps only, for now.
   episode.
 - Resume, Up Next, Skip Intro, Skip Credits and seek-bar previews.
 - Shuffle a show or a season: its episodes in a random order, each once.
+- In the web player, the season's episodes or the queue a pick away, and Previous beside Next.
 - Picture in picture in the web app and on Android phones and tablets.
 - Android TV, Fire TV, Samsung and LG play videos from a USB drive, with no
   server ([TV_PLATFORMS.md](TV_PLATFORMS.md#videos-on-a-usb-drive)).

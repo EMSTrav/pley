@@ -13,18 +13,20 @@ import {
   Pause,
   Play,
   ServerOff,
+  SkipBack,
   SkipForward,
   TriangleAlert,
   Volume1,
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { errorMessage, isApiError } from "@/api/client";
+import { api, errorMessage, isApiError } from "@/api/client";
 import { onServerEvent } from "@/api/events";
 import { fetchNext, invalidateWatchState, keys, useTrickplay } from "@/api/hooks";
 import { deleteSubtitle, trackStream } from "@/api/subtitles";
 import type {
   Control,
+  Id,
   ItemDetail,
   ItemSummary,
   MediaFile,
@@ -62,6 +64,7 @@ import { AutoQuality, ORIGINAL_ID, storedMemory, type AutoMemory, type AutoStep 
 import { autoLadder, chooseQuality, modeFor, namedFor, ORIGINAL, qualitiesFor, qualityById, qualityLabel } from "./quality";
 import { heardOriginalOnly, networkStart, reportCeiling, serverOriginalOnly } from "./network";
 import { ChaptersMenu } from "./ChaptersMenu";
+import { EpisodesMenu } from "./EpisodesMenu";
 import type { SubtitleSources } from "./FindSubtitles";
 import { SeekBar } from "./SeekBar";
 import { methodLabel, PlaybackDetails } from "./PlaybackDetails";
@@ -96,14 +99,14 @@ const PROGRESS_INTERVAL = 10_000;
 const PAUSED_HEARTBEAT = 30_000;
 const HIDE_CONTROLS_AFTER = 3_000;
 /**
- * The remote's commands a video obeys: `next` only where something can come
- * next, `audio` where its own menu offers Audio (more than one track), and
+ * The remote's commands a video obeys: `next` and `previous` only where
+ * something can come next (a show's episode, a queue's entry), `audio` where its own menu offers Audio (more than one track), and
  * `subtitles` and `quality` always, as its menu offers Subtitles (a track
  * found or added while it plays can be picked too) and Quality.
  */
 function videoControls(next: boolean, audioTracks: number): Control[] {
   const controls: Control[] = ["play", "pause", "seek", "skip"];
-  if (next) controls.push("next");
+  if (next) controls.push("next", "previous");
   if (audioTracks > 1) controls.push("audio");
   controls.push("subtitles", "quality");
   return controls;
@@ -480,6 +483,7 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
   /** The video in the iPhone's own fullscreen player, which only draws subtitles itself. */
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [episodesOpen, setEpisodesOpen] = useState(false);
   const [active, setActive] = useState(true);
   const [hoveringControls, setHoveringControls] = useState(false);
   /**
@@ -1577,6 +1581,7 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
     (!playing && !remotePaused) ||
     settingsOpen ||
     chaptersOpen ||
+    episodesOpen ||
     loading ||
     !!error ||
     needsGesture ||
@@ -1723,6 +1728,47 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
     toast.info(subtitlesText(next ?? null));
   };
 
+  /**
+   * Plays `picked` (entry `index` of the queue, or an episode on its own)
+   * where it was left, the sleep timer going on with it, as Next does.
+   */
+  const playPicked = (picked: ItemSummary, index: number | null) => {
+    const at = picked.user_state.watched ? 0 : picked.user_state.position_ms;
+    const url = queue && index != null ? queuePlayUrl(queue.queue, index, picked.id, at) : playUrl(picked.id, { startMs: at });
+    const timer = sleep.timer && "endsAt" in sleep.timer ? sleep.timer : null;
+    void navigate(url, { replace: true, state: timer ? { sleep: timer } : null });
+  };
+
+  /** The queue's entry before this one, or the show's episode before this one (in its order, Specials aside). */
+  const findPrevious = async (): Promise<{ item: ItemSummary; index: number | null } | null> => {
+    if (queue) {
+      const id = queue.queue.ids[queue.index - 1];
+      if (id == null) return null;
+      const item = await qc.fetchQuery({ queryKey: keys.item(id), queryFn: () => api.get<ItemDetail>(`/api/items/${id}`), staleTime: 0 });
+      return { item, index: queue.index - 1 };
+    }
+    if (!isEpisode || item.grandparent_id == null) return null;
+    const { ids } = await api.get<{ ids: Id[] }>(`/api/items/${item.grandparent_id}/episodes`);
+    const id = ids[ids.indexOf(item.id) - 1];
+    if (id == null) return null;
+    const previous = await qc.fetchQuery({ queryKey: keys.item(id), queryFn: () => api.get<ItemDetail>(`/api/items/${id}`), staleTime: 0 });
+    return { item: previous, index: null };
+  };
+
+  /** `remote`: asked for from another device, which is told nothing here when nothing comes before. */
+  const playPrevious = async (remote = false) => {
+    try {
+      const previous = await findPrevious();
+      if (!previous) {
+        if (!remote) toast.info(queue ? t("video.firstInQueue") : t("video.firstEpisode"));
+        return;
+      }
+      playPicked(previous.item, previous.index);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
   /** `remote`: asked for from another device, which is told nothing here when nothing comes next. */
   const playNext = async (remote = false) => {
     try {
@@ -1789,7 +1835,7 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
         if (hasNext) void playNext(true);
         break;
       case "previous":
-        // Videos have none.
+        if (hasNext) void playPrevious(true);
         break;
       // As its own menu picks them; what plays already is said again at once.
       // A new audio track's session says it as it starts, and other
@@ -2198,6 +2244,17 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
               ) : null}
             </div>
           ) : null}
+          {hasNext && (queue ? queue.index > 0 : true) ? (
+            <button
+              type="button"
+              aria-label={queue ? t("common:actions.previous") : t("video.previousEpisode")}
+              title={queue ? t("common:actions.previous") : t("video.previousEpisode")}
+              onClick={() => void playPrevious()}
+              className="flex size-10 items-center justify-center rounded-full transition hover:bg-white/15"
+            >
+              <SkipBack className="size-5 fill-current" />
+            </button>
+          ) : null}
           {hasNext ? (
             <button
               type="button"
@@ -2208,6 +2265,9 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
             >
               <SkipForward className="size-5 fill-current" />
             </button>
+          ) : null}
+          {hasNext ? (
+            <EpisodesMenu item={item} queue={queue ?? null} open={episodesOpen} setOpen={setEpisodesOpen} onPick={playPicked} />
           ) : null}
           {file && (file.chapters?.length ?? 0) > 1 ? (
             <ChaptersMenu

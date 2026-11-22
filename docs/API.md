@@ -1772,6 +1772,7 @@ user's watch state and their access are unchanged.
 
 | Method | Path | Who | What |
 |---|---|---|---|
+| GET | `/api/items?ids=` | `library` | `{ items: ItemSummary[] }`: the items `ids` names (at most 200, with commas between), in that order, those the user may see; for a player's queue, shown a page at a time. `400` past 200 or for an id that isn't a whole number |
 | GET | `/api/items/{id}` | `library` | `ItemDetail` |
 | GET | `/api/items/{id}/children` | `library` | `{ items: ItemSummary[] }` by index: a show's seasons, a season's episodes, an artist's albums, an album's tracks |
 | GET | `/api/items/{id}/on-deck` | `library` | `{ item: ItemSummary \| null }`: the episode a show's or season's *Play* starts |
@@ -4061,7 +4062,9 @@ profile of the remote that sent it something.
   - `429` past 10 commands a second to one session.
 - **The player acts on it**, if `session_id` is the session it plays now:
   `seek` stops at the start and the end, `skip` counts from where it is,
-  and `next` with nothing next or `previous` on a video does nothing;
+  `previous` on an episode plays the show's one before it (its queue's
+  entry before it, in a queue), and `next` with nothing next or `previous`
+  with nothing before does nothing;
   `audio` and `subtitles` change track, and `quality` the quality, as the
   player's own menus would (a new quality is kept as its pick, as when
   picked there).

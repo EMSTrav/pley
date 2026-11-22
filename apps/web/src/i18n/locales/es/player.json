@@ -9,6 +9,7 @@
   },
   "video": {
     "nextEpisode": "Siguiente episodio",
+    "previousEpisode": "Episodio anterior",
     "fullscreen": "Pantalla completa",
     "exitFullscreen": "Salir de pantalla completa",
     "fullscreenShortcut": "Pantalla completa (f)",
@@ -21,6 +22,8 @@
     "subtitlesNotLoaded": "No se pudieron cargar estos subtítulos.",
     "lastInQueue": "Es el último de la lista",
     "lastEpisode": "Es el último episodio",
+    "firstInQueue": "Este es el primero",
+    "firstEpisode": "Este es el primer episodio",
     "qualityLowered": "Calidad reducida a {{quality}}",
     "remotePlaying": "Reproduciendo",
     "remotePaused": "En pausa",
@@ -87,6 +90,15 @@
   "chapters": {
     "title": "Capítulos",
     "numbered": "Capítulo {{number}}"
+  },
+  "episodes": {
+    "title": "Episodios",
+    "queue": "Cola",
+    "position": "{{n}} de {{count}}",
+    "season": "Temporada",
+    "loading": "Cargando…",
+    "playing": "Reproduciendo ahora",
+    "watched": "Visto"
   },
   "details": {
     "method": {

@@ -9,6 +9,7 @@
   },
   "video": {
     "nextEpisode": "下一集",
+    "previousEpisode": "上一集",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
     "fullscreenShortcut": "全屏 (f)",
@@ -21,6 +22,8 @@
     "subtitlesNotLoaded": "无法加载这些字幕。",
     "lastInQueue": "这是最后一个",
     "lastEpisode": "这是最后一集",
+    "firstInQueue": "这是第一个",
+    "firstEpisode": "这是第一集",
     "qualityLowered": "画质已降至 {{quality}}",
     "remotePlaying": "正在播放",
     "remotePaused": "已暂停",
@@ -85,6 +88,15 @@
   "chapters": {
     "title": "章节",
     "numbered": "第 {{number}} 章"
+  },
+  "episodes": {
+    "title": "分集",
+    "queue": "播放队列",
+    "position": "第 {{n}} 个，共 {{count}} 个",
+    "season": "季",
+    "loading": "正在加载…",
+    "playing": "正在播放",
+    "watched": "已看过"
   },
   "details": {
     "method": {

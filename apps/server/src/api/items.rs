@@ -181,6 +181,35 @@ pub async fn children(
 }
 
 #[derive(Deserialize)]
+pub struct ManyQuery {
+    #[serde(default)]
+    ids: String,
+}
+
+/// The most items one request names.
+const MANY_ITEMS: usize = 200;
+
+/// Several items by id, in the order asked (a player's queue, shown a page
+/// at a time): those the user may see, the rest left out.
+pub async fn many(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(query): Query<ManyQuery>,
+) -> ApiResult<Json<ItemList>> {
+    let ids: Vec<i64> = query
+        .ids
+        .split(',')
+        .filter(|id| !id.is_empty())
+        .map(|id| id.trim().parse().map_err(|_| AppError::bad_request("ids are whole numbers, with commas between")))
+        .collect::<Result<_, _>>()?;
+    if ids.len() > MANY_ITEMS {
+        return Err(AppError::bad_request(format!("at most {MANY_ITEMS} ids at once")));
+    }
+    let rows = catalog::items_by_ids(&state.db, user.id, &ids).await?;
+    Ok(Json(ItemList { items: rows.iter().map(|r| r.to_summary()).collect() }))
+}
+
+#[derive(Deserialize)]
 pub struct EpisodesQuery {
     #[serde(default)]
     shuffle: bool,

@@ -9,6 +9,7 @@
   },
   "video": {
     "nextEpisode": "Next episode",
+    "previousEpisode": "Previous episode",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit fullscreen",
     "fullscreenShortcut": "Fullscreen (f)",
@@ -21,6 +22,8 @@
     "subtitlesNotLoaded": "These subtitles couldn't be loaded.",
     "lastInQueue": "This is the last one",
     "lastEpisode": "This is the last episode",
+    "firstInQueue": "This is the first one",
+    "firstEpisode": "This is the first episode",
     "qualityLowered": "Quality lowered to {{quality}}",
     "remotePlaying": "Playing",
     "remotePaused": "Paused",
@@ -86,6 +89,15 @@
   "chapters": {
     "title": "Chapters",
     "numbered": "Chapter {{number}}"
+  },
+  "episodes": {
+    "title": "Episodes",
+    "queue": "Queue",
+    "position": "{{n}} of {{count}}",
+    "season": "Season",
+    "loading": "Loading…",
+    "playing": "Playing now",
+    "watched": "Watched"
   },
   "details": {
     "method": {

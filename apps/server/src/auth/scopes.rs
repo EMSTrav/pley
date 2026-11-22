@@ -233,6 +233,7 @@ pub const APP_ROUTES: &[(&str, &str, Need)] = &[
     ("GET", "/api/items/{id}/on-deck", Need::Scope(Library)),
     ("GET", "/api/items/{id}/next", Need::Scope(Library)),
     ("GET", "/api/items/{id}/episodes", Need::Scope(Library)),
+    ("GET", "/api/items", Need::Scope(Library)),
     ("GET", "/api/items/{id}/related", Need::Scope(Library)),
     ("GET", "/api/items/{id}/images/{kind}", Need::Scope(Library)),
     ("GET", "/api/items/{id}/collections", Need::Scope(Library)),
@@ -459,7 +460,7 @@ mod tests {
     fn every_app_route_is_on_a_real_path() {
         // Whether each names a route of api/mod.rs is checked by
         // tests/app_tokens.rs, which reads it.
-        assert_eq!(APP_ROUTES.len(), 135);
+        assert_eq!(APP_ROUTES.len(), 136);
         for (i, (method, path, _)) in APP_ROUTES.iter().enumerate() {
             assert!(["GET", "POST", "PUT", "PATCH", "DELETE"].contains(method), "{method} {path}");
             assert!(path.starts_with("/api/") && !path.ends_with('/'), "{path}");

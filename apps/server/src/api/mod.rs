@@ -121,6 +121,7 @@ pub fn router(state: AppState) -> Router {
         .route("/playlists/{id}/items", post(playlists::add))
         .route("/playlists/{id}/items/{entry_id}", delete(playlists::remove))
         .route("/playlists/{id}/order", put(playlists::reorder))
+        .route("/items", get(items::many))
         .route("/items/{id}", get(items::get).patch(editing::edit))
         .route("/items/{id}/matches", get(editing::matches))
         .route("/items/{id}/match", post(editing::rematch))

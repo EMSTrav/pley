@@ -1251,7 +1251,7 @@ describe("VideoPlayer obeying the remote", () => {
     const next = makeItem({ id: 9, kind: "episode", title: "Second" });
     const { requests } = await playing(0, episode);
     expect(requests.find((r) => r.path === "/api/playback")?.body).toMatchObject({
-      controls: ["play", "pause", "seek", "skip", "next", "subtitles", "quality"],
+      controls: ["play", "pause", "seek", "skip", "next", "previous", "subtitles", "quality"],
     });
     mockApi({
       "GET /api/items/8/next": () => ({ item: next }),
@@ -1260,6 +1260,37 @@ describe("VideoPlayer obeying the remote", () => {
     });
     act(() => FakeEventSource.last?.send(command("next")));
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/play\//));
+  });
+
+  it("plays the show's episode before, for Previous, and nothing before the first", async () => {
+    const episode = detail({ id: 8, kind: "episode", title: "Second", grandparent_id: 3 });
+    const before = detail({ id: 6, kind: "episode", title: "Pilot", user_state: { position_ms: 40_000, watched: false, play_count: 0 } });
+    await playing(0, episode);
+    const requests = mockApi({
+      "GET /api/items/3/episodes": () => ({ ids: [6, 8] }),
+      "GET /api/items/6": () => before,
+      "POST /api/items/8/progress": () => undefined,
+      "DELETE /api/playback/s1": () => undefined,
+    });
+    act(() => FakeEventSource.last?.send(command("previous")));
+    // Where it was left, as Next plays it.
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/play\/.+\?t=40000$/));
+    // The show's own order, not a shuffle.
+    expect(requests.find((r) => r.path.startsWith("/api/items/3/episodes"))?.path).toBe("/api/items/3/episodes");
+  });
+
+  it("says so when Previous has nothing before, but not to a remote", async () => {
+    const user = userEvent.setup();
+    const episode = detail({ id: 8, kind: "episode", title: "Pilot", grandparent_id: 3 });
+    await playing(0, episode);
+    mockApi({ "GET /api/items/3/episodes": () => ({ ids: [8, 9] }), "POST /api/items/8/progress": () => undefined });
+    act(() => FakeEventSource.last?.send(command("previous")));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText("This is the first episode")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous episode" }));
+    expect(await screen.findByText("This is the first episode")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
   });
 
   it("does nothing for Next when nothing comes next", async () => {
