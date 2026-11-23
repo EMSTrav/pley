@@ -9,6 +9,12 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Changed
+
+- Pley's license gains a permission for app stores: Pley may be
+  distributed through stores whose terms add restrictions of their own,
+  as long as its source stays available.
+
 ### Fixed
 
 - Home and a TV library's Recommended tab open at once after a big scan,
