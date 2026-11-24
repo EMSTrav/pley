@@ -34,6 +34,8 @@ describes how they are made.
 - Pley's license gains a permission for app stores: Pley may be
   distributed through stores whose terms add restrictions of their own,
   as long as its source stays available.
+- An idle server and its transcoder use far less of the processor and
+  wake it far less often.
 - Files added or changed in a large library, or named in a refresh from
   another tool, show up sooner.
 - A title a metadata source had nothing for gets its details once the
