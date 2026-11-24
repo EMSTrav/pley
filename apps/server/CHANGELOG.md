@@ -11,6 +11,8 @@ describes how they are made.
 
 ### Added
 
+- A TheTVDB or IMDb id in a show folder's name (`{tvdb-…}`, `{imdb-tt…}`)
+  finds the show, as a TMDB id (`{tmdb-…}`) does.
 - An audiobook's page has the ⋯ menu movies and shows have. Administrators
   can edit a book's authors, narrators and series with its other details,
   fix its match by picking an Open Library work or an Audible recording
@@ -39,6 +41,11 @@ describes how they are made.
 
 ### Fixed
 
+- Different shows whose folders have the same name, in two of a library's
+  folders or named alike but for their punctuation, are no longer one show
+  when the ids in their folders' names or `tvshow.nfo` files differ. A show
+  already made of two is split at the next scan without losing what was
+  watched.
 - Episodes added to a show that already has its details get theirs at the
   next scan, and so do those of a show whose seasons TMDB didn't answer
   for.
