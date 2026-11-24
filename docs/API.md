@@ -1723,9 +1723,17 @@ open only some libraries see those, in that order.
   when `ids` aren't the libraries the user may open. It and `DELETE` send
   `libraries_changed` to the user's event streams.
 
-**Audiobooks** are for Pley's own sign-in: the web app and the desktop
-app's window, which show them. A request with an app's token, an
-administrator's included, gets no audiobook library: none in
+**Audiobooks** are for Pley's own sign-in (the web app and the desktop
+app's window, which show them) and for an app's request that says it
+shows them with `X-Pley-Features: audiobooks` (comma-separated features,
+`audiobooks` the only one yet; the Android app sends it with every API
+request and on its event stream, not with pictures, which don't depend
+on it). Such a request gets them as Pley's own
+sign-in does, from the libraries the account may open; an app that sends
+it with some requests only keeps their answers apart from the others' (an
+HTTP cache of their own), as they differ. Any other
+request with an app's token, an administrator's included, gets no
+audiobook library: none in
 `/api/libraries` or among Home's rows, `404` from a library's own routes,
 no `continue_listening` on Home, no book or part in search or history,
 and no scan or change of an audiobook library in `/api/events`, one
@@ -1974,8 +1982,9 @@ WebVTT file named `.srt` is taken as WebVTT). Its language is kept as ISO
 | GET | `/api/search?q=&limit=` | `library` | `{ items: ItemSummary[], people: PersonSummary[], channels: LiveChannel[] }`: `items`, `people` and `channels` each up to `limit` (default 40, 1 to 200): titles, people, and Live TV channels by name, number or what's on, for those Live TV is open to. The apps ask for 200 |
 
 - **Home** hubs, empty ones left out: `continue_watching` (in progress and
-  next up), then `continue_listening` (audiobooks part way through; never
-  for an app's token, see [Audiobooks](#libraries)), then
+  next up), then `continue_listening` (audiobooks part way through; for
+  an app's token only with `X-Pley-Features: audiobooks`, see
+  [Audiobooks](#libraries)), then
   `my_list` ("My List", its 20 newest), then the rows administrators put
   on Home ([Rows](#rows)): collections, and each music and audiobook
   library's `recently_added:<library_id>`.
@@ -2041,7 +2050,8 @@ library's hubs) holds the audiobooks the user is part way through, the
 one heard last first: a part started, or one finished and another still
 to hear. Its items are the books; `on-deck` says where each goes on. A
 finished book leaves it. Audiobooks are never in Continue Watching, and an
-app's token gets no Continue Listening ([Audiobooks](#libraries)).
+app's token gets no Continue Listening unless its request has
+`X-Pley-Features: audiobooks` ([Audiobooks](#libraries)).
 
 **`DELETE /api/continue-watching/{id}`** takes a movie, or for an episode
 (in progress or next up) its whole show, out of the user's Continue
@@ -2465,6 +2475,9 @@ one of an audiobook library is refused (`400`).
   client_id?: string;             // identifies the player (browser tab, device)
   keep_previous?: boolean;        // the client's last session plays on: don't end it (the player ends it
                                   // as it moves over)
+  ahead?: boolean;                // with keep_previous: asked for ahead, to play once what plays ends (music's
+                                  // next track, without a gap): not listed as playing (the dashboard, remotes,
+                                  // the Plex and Jellyfin APIs) until its first progress report
   keyed_urls?: boolean;           // the player can't send the Authorization header: its addresses carry a
                                   // key (Keyed URLs)
   controls?: Control[];           // the remote's commands this player obeys (Remote control); left out: none.
@@ -3361,8 +3374,8 @@ is not a play.
 `item_id` (the item, or the episodes or tracks under it), `library_id`,
 `since` (unix seconds); administrators also `user_id=<id>` or `all=1`.
 Your own plays unless asked otherwise; entries of items you can't see are
-left out, and for an app's token those of audiobooks
-([Audiobooks](#libraries)).
+left out, and for an app's token those of audiobooks, unless its request
+has `X-Pley-Features: audiobooks` ([Audiobooks](#libraries)).
 
 ```ts
 interface HistoryEntry {

@@ -9,6 +9,15 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Audiobooks in apps that show them: an app's request with
+  `X-Pley-Features: audiobooks` gets audiobook libraries as the web app
+  does. Pley for Android asks for them.
+- A player can ask for the next track ahead (`ahead`), to play it
+  without a gap: it isn't shown as playing on the dashboard, to remotes
+  or in Tautulli until it plays.
+
 ### Changed
 
 - Where Dolby Vision needs another FFmpeg, the transcoder settings name
