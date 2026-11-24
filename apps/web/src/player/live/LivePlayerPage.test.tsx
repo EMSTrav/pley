@@ -286,6 +286,12 @@ describe("LivePlayerPage, a channel the browser can't play as sent", () => {
     mpegtsLoader.load = () => Promise.resolve(FakeMpegts);
     FakeMpegts.Player.failsAsItLoads = false;
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    // The stream's first seconds come: playback starts once they're buffered.
+    vi.spyOn(HTMLMediaElement.prototype, "buffered", "get").mockReturnValue({
+      length: 1,
+      start: () => 0,
+      end: () => 3,
+    });
     let n = 0;
     const requests = mockApi({
       "GET /api/live/channels/5": () => news,

@@ -22,6 +22,8 @@ describes how they are made.
 
 ### Fixed
 
+- Live TV channels played as they are no longer stall every few seconds in the
+  browser.
 - Home and a TV library's Recommended tab open at once after a big scan,
   also in a library of thousands of shows.
 - Music playing in the web app pauses once Play on… sends something to
