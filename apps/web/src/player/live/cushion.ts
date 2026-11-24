@@ -68,6 +68,8 @@ export function keepCushion(
     window.clearInterval(timer);
     video.removeEventListener("waiting", stalled);
     if (video.playbackRate === 0) video.playbackRate = 1;
+    // Stopped twice (a stream that broke off, then the page that let it go): told once.
     if (holding && started) onHold(false);
+    holding = false;
   };
 }

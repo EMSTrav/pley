@@ -341,6 +341,103 @@ describe("LivePlayerPage, a channel the browser can't play as sent", () => {
   });
 });
 
+describe("LivePlayerPage, a channel played from its stream", () => {
+  // Seconds buffered past what plays, and how ready the video says it is.
+  let ahead = 0;
+  let ready = 0;
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mpegtsPlayers.length = 0;
+    mpegtsLoader.load = () => Promise.resolve(FakeMpegts);
+    FakeMpegts.Player.failsAsItLoads = false;
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("MediaSource", class {});
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "buffered", "get").mockImplementation(() => ({
+      length: 1,
+      start: () => 0,
+      end: () => ahead,
+    }));
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockImplementation(() => ready);
+    mockApi({
+      "GET /api/live/channels/5": () => news,
+      "POST /api/live/channels/5/watch": () => ({ session_id: "s1", url: "/api/live/sessions/s1/index.m3u8", kind: "hls", channel: news }),
+      "GET /api/live/sessions/s1/plan": () => ({ video_codec: "h264", audio_codec: "aac", video: "copy", audio: "copy" }),
+      "DELETE /api/live/sessions/s1": () => undefined,
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    mpegtsLoader.load = () => Promise.reject(new Error("not here"));
+    FakeMpegts.Player.failsAsItLoads = true;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Plays the channel with its first seconds buffered; the video and the stall spinner. */
+  async function playing() {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    ahead = 3;
+    ready = HTMLMediaElement.HAVE_ENOUGH_DATA;
+    const { container } = renderWithProviders(<PlayerWithEvents />, { route: "/live/5" });
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    const video = container.querySelector("video")!;
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+    const spinner = () => container.querySelector(".animate-spin");
+    expect(spinner()).not.toBeInTheDocument();
+    return { video, spinner };
+  }
+
+  /** It runs out: nothing left to play. */
+  function stall(video: HTMLVideoElement) {
+    ahead = 0;
+    ready = HTMLMediaElement.HAVE_CURRENT_DATA;
+    act(() => {
+      video.dispatchEvent(new Event("waiting"));
+    });
+  }
+
+  it("shows no spinner when the cushion comes back at once", async () => {
+    const { video, spinner } = await playing();
+    stall(video);
+    expect(video.playbackRate).toBe(0);
+    // The provider's next burst, more than the cushion, before the spinner was due.
+    ahead = 5;
+    ready = HTMLMediaElement.HAVE_ENOUGH_DATA;
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+      vi.advanceTimersByTime(300);
+    });
+    expect(video.playbackRate).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(spinner()).not.toBeInTheDocument();
+  });
+
+  it("keeps the spinner while nothing comes, after waiting its longest too", async () => {
+    const { video, spinner } = await playing();
+    stall(video);
+    expect(spinner()).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(6500);
+    });
+    // Gone on, with nothing to play yet.
+    expect(video.playbackRate).toBe(1);
+    expect(spinner()).toBeInTheDocument();
+    // Then something comes, and it plays.
+    ahead = 1;
+    ready = HTMLMediaElement.HAVE_ENOUGH_DATA;
+    act(() => {
+      video.dispatchEvent(new Event("canplay"));
+    });
+    expect(spinner()).not.toBeInTheDocument();
+  });
+});
+
 describe("LivePlayerPage and the remote", () => {
   const sport: Channel = { ...news, id: 6, name: "Sport", number: "6", group: "Sport" };
   const film: Channel = { ...news, id: 7, name: "Film", number: "7", group: "Film" };

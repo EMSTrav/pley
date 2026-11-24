@@ -18,6 +18,7 @@ describes how they are made.
 
 ### Fixed
 
+- Live TV channels played as they are no longer stall every few seconds.
 - Music playing in the app pauses once Play on… sends something to
   another device, rather than playing in both places.
 

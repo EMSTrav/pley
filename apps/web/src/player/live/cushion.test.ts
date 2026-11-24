@@ -93,5 +93,8 @@ describe("keepCushion", () => {
     // Stopped: a stall after it holds nothing.
     video.dispatchEvent(new Event("waiting"));
     expect(video.playbackRate).toBe(1);
+    // Stopped again, it says nothing more.
+    stop();
+    expect(holds).toEqual([true, false]);
   });
 });

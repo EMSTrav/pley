@@ -423,7 +423,8 @@ function LivePlayer({
       // Played a few seconds behind live, so the provider's bursts play through.
       stopCushion = keepCushion(video, start, (holding) => {
         cushionHold.current = holding;
-        setBuffering(holding);
+        // Gone on after waiting its longest, it may still have nothing to play.
+        setBuffering(holding || video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
       });
       return true;
     };
@@ -595,7 +596,10 @@ function LivePlayer({
     let stalled: number | undefined;
     const waiting = () => {
       window.clearTimeout(stalled);
-      stalled = window.setTimeout(() => setBuffering(true), SPINNER_AFTER);
+      stalled = window.setTimeout(() => {
+        // The cushion came back at once, so it plays on: no spinner.
+        if (cushionHold.current || video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setBuffering(true);
+      }, SPINNER_AFTER);
     };
     const going = () => {
       if (cushionHold.current) return;
