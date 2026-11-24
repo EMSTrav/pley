@@ -160,7 +160,7 @@
       "transcoded": "转码频道",
       "transcodedHint": "需要转码的频道所允许的最大行数。",
       "asSent": "按频道原始画质",
-      "h264Note": "H.264 频道按原样发送，无论其分辨率如何。",
+      "h264Note": "H.264 频道按原样发送，除非其分辨率高于此设置。",
       "channelsAndGuide": "频道与节目指南",
       "readEvery": "重新读取频率",
       "everyHours_other": "{{count}} 小时",
@@ -332,8 +332,8 @@
     "plan": {
       "radio": "广播",
       "asItIs": "{{source}} 原样",
-      "transcoded": "{{source}} → {{encoder}} 上的 H.264",
-      "transcodedDeinterlaced": "{{source}} → {{encoder}} 上的 H.264（已去隔行）",
+      "transcoded": "{{source}} → {{encoder}} 上的 {{target}}",
+      "transcodedDeinterlaced": "{{source}} → {{encoder}} 上的 {{target}}（已去隔行）",
       "processor": "处理器"
     },
     "rate": {

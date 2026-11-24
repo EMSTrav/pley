@@ -170,7 +170,7 @@
       "transcoded": "Chaînes transcodées",
       "transcodedHint": "Le nombre maximal de lignes d’une chaîne qui doit être transcodée.",
       "asSent": "Telle que la chaîne l’envoie",
-      "h264Note": "Les chaînes H.264 sont envoyées telles quelles, quelle que soit leur taille.",
+      "h264Note": "Les chaînes H.264 sont envoyées telles quelles, sauf si elles dépassent cette hauteur.",
       "channelsAndGuide": "Chaînes et guide des programmes",
       "readEvery": "Actualiser",
       "everyHours_one": "toutes les heures",
@@ -384,8 +384,8 @@
     "plan": {
       "radio": "radio",
       "asItIs": "{{source}} tel quel",
-      "transcoded": "{{source}} → H.264 sur {{encoder}}",
-      "transcodedDeinterlaced": "{{source}} → H.264 sur {{encoder}}, désentrelacé",
+      "transcoded": "{{source}} → {{target}} sur {{encoder}}",
+      "transcodedDeinterlaced": "{{source}} → {{target}} sur {{encoder}}, désentrelacé",
       "processor": "le processeur"
     },
     "rate": {

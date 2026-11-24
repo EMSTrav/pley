@@ -140,9 +140,10 @@ function PlayerWithEvents() {
   );
 }
 
-function serve(): FakeRequest[] {
+function serve(more: Parameters<typeof mockApi>[0] = {}): FakeRequest[] {
   let n = 0;
   return mockApi({
+    ...more,
     "GET /api/live/channels/5": () => news,
     "POST /api/live/channels/5/watch": () => {
       n++;
@@ -572,5 +573,55 @@ describe("LivePlayerPage and picture in picture", () => {
     unmount();
     expect(actions.get("nexttrack")).toBeNull();
     expect(actions.get("previoustrack")).toBeNull();
+  });
+});
+
+describe("LivePlayerPage, a picture the browser can't take", () => {
+  beforeEach(() => {
+    hlsInstances.length = 0;
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** The browser refuses what it's given, again and again (4K H.264 it can't decode). */
+  const refused = (hls: InstanceType<typeof FakeHls> | undefined) => {
+    for (let i = 0; i < 3; i++) {
+      act(() => hls?.emit("hlsError", { fatal: true, type: "mediaError", details: "bufferAppendError" }));
+    }
+  };
+
+  it("asks for a smaller picture once, and plays it", async () => {
+    const requests = serve({ "POST /api/live/sessions/s1/smaller": () => ({ smaller: true }) });
+    renderWithProviders(<PlayerWithEvents />, { route: "/live/5" });
+    await waitFor(() => expect(hlsInstances[0]?.calls).toContain("attachMedia"));
+
+    refused(hlsInstances[0]);
+    // The browser's own recovery first, then the smaller picture, from the same playlist.
+    expect(hlsInstances[0]?.calls.filter((c) => c === "recoverMediaError")).toHaveLength(2);
+    await waitFor(() => expect(hlsInstances[1]?.calls).toContain("loadSource /api/live/sessions/s1/index.m3u8"));
+    expect(hlsInstances[0]?.calls.at(-1)).toBe("destroy");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // The same session: no other connection taken.
+    expect(watches(requests)).toHaveLength(1);
+
+    // Refused at 1080p too: it says so, and asks no more.
+    refused(hlsInstances[1]);
+    expect(await screen.findByRole("alert")).toHaveTextContent("bufferAppendError");
+    expect(requests.filter((r) => r.path.endsWith("/smaller"))).toHaveLength(1);
+  });
+
+  it("says why it stopped when there's no smaller picture", async () => {
+    serve({ "POST /api/live/sessions/s1/smaller": () => ({ smaller: false }) });
+    renderWithProviders(<PlayerWithEvents />, { route: "/live/5" });
+    await waitFor(() => expect(hlsInstances[0]?.calls).toContain("attachMedia"));
+    refused(hlsInstances[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent("bufferAppendError");
+    expect(hlsInstances).toHaveLength(1);
   });
 });

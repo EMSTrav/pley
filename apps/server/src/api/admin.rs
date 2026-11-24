@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 use crate::auth::AdminUser;
 use crate::error::{ApiResult, AppError};
 use crate::network::{self, Adapter, Fixed, Listen, Listener};
-use crate::playback::{TranscodeInfo, transcode_info};
+use crate::playback::{TranscodeInfo, codec_label, transcode_info};
 use crate::providers::{Check, ProviderError};
 use crate::requests::arr;
 use crate::settings::{AdminSettings, SettingsPatch};
 use crate::state::AppState;
+use pley_transcoder_api::{JobState, LiveState, LiveStatus};
 
 // ------------------------------------------------------------------ settings
 
@@ -840,6 +841,8 @@ pub async fn transcoder_status(State(state): State<AppState>, _admin: AdminUser)
                     served_bytes: j.served_bytes,
                     warnings: j.warnings.clone(),
                 })
+                // Live TV's channels too, which count among the running jobs.
+                .chain(status.live.iter().filter(|l| !matches!(l.state, LiveState::Ended)).map(live_job))
                 .collect(),
         }),
         Err(_) => Json(TranscoderStatusDto {
@@ -854,6 +857,88 @@ pub async fn transcoder_status(State(state): State<AppState>, _admin: AdminUser)
             counters: Counters::default(),
             jobs: Vec::new(),
         }),
+    }
+}
+
+/// A live channel the transcoder makes, as a row of the jobs.
+fn live_job(live: &LiveStatus) -> TranscoderJob {
+    TranscoderJob {
+        id: live.id.clone(),
+        label: live.label.clone(),
+        owner: live.owner.clone(),
+        state: match live.state {
+            LiveState::Waiting => JobState::Starting,
+            LiveState::Running => JobState::Running,
+            LiveState::Ended => JobState::Finished,
+            LiveState::Failed => JobState::Failed,
+        },
+        created_at_ms: live.created_at_ms,
+        last_access_ms: live.created_at_ms,
+        info: live_info(live),
+        restarts: 0,
+        served_bytes: 0,
+        warnings: Vec::new(),
+    }
+}
+
+/// What a live channel's job makes of it: `HEVC 3840×2160` → `H.264 1920×1080`.
+fn live_info(live: &LiveStatus) -> TranscodeInfo {
+    let plan = live.plan.as_ref();
+    let size = |height: Option<i64>| {
+        let plan = plan?;
+        let (w, h, out) = (plan.width?, plan.height?, height?);
+        // Scaled keeping its shape, to an even width, as FFmpeg makes it.
+        let width = if out == h { w } else { (w * out / h.max(1) + 1) / 2 * 2 };
+        Some(format!("{width}×{out}"))
+    };
+    let label = |codec: Option<&str>, size: Option<String>| {
+        codec.map(|c| [codec_label(c), size.unwrap_or_default()].join(" ").trim().to_owned())
+    };
+    let video = plan.map(|p| p.video.as_str());
+    let audio = plan.map(|p| p.audio.as_str());
+    let video_codec = plan.and_then(|p| p.video_codec.as_deref());
+    let audio_codec = plan.and_then(|p| p.audio_codec.as_deref());
+    TranscodeInfo {
+        job_id: live.id.clone(),
+        state: JobState::Running,
+        video: match video {
+            None | Some("none") => "none",
+            Some("copy") => "copy",
+            Some(_) => "transcode",
+        },
+        audio: match audio {
+            None | Some("none") => "none",
+            Some("copy") => "copy",
+            Some(_) => "transcode",
+        },
+        video_in: label(video_codec, size(plan.and_then(|p| p.height))),
+        video_out: match video {
+            Some("none" | "copy") | None => label(video_codec, size(plan.and_then(|p| p.height))),
+            Some(_) => label(Some("h264"), size(plan.and_then(|p| p.out_height.or(p.height)))),
+        },
+        audio_in: audio_codec.map(codec_label),
+        audio_out: match audio {
+            Some("aac") => Some("AAC".into()),
+            _ => audio_codec.map(codec_label),
+        },
+        encoder: video.filter(|v| !matches!(*v, "copy" | "none")).map(str::to_owned),
+        preset: None,
+        decoder: None,
+        pipeline: (video == Some("copy")).then(|| "copy".to_owned()),
+        tonemap: None,
+        dolby_vision: None,
+        hdr10plus_stripped: false,
+        subtitle_burn: false,
+        speed: None,
+        fps: None,
+        transcoded_ms: 0,
+        segments_ready: u32::try_from(live.segments).unwrap_or(u32::MAX),
+        // A live channel has no end.
+        segments_total: 0,
+        bitrate_out: None,
+        last_error: live.error.clone(),
+        rendition: 0,
+        variants: 0,
     }
 }
 
@@ -948,6 +1033,46 @@ pub async fn browse_fs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn live(video: &str, out_height: Option<i64>) -> LiveStatus {
+        LiveStatus {
+            id: "l1".into(),
+            label: Some("Sport 4K".into()),
+            owner: Some("Live TV".into()),
+            state: LiveState::Running,
+            plan: Some(pley_transcoder_api::LivePlan {
+                video_codec: Some("hevc".into()),
+                width: Some(3840),
+                height: Some(2160),
+                audio_codec: Some("ac3".into()),
+                out_height,
+                video: video.into(),
+                audio: "aac".into(),
+                ..Default::default()
+            }),
+            segments: 42,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_live_channel_reads_as_a_job() {
+        let job = live_job(&live("h264_qsv", Some(1080)));
+        assert_eq!((job.label.as_deref(), job.owner.as_deref()), (Some("Sport 4K"), Some("Live TV")));
+        assert_eq!(job.state, JobState::Running);
+        let info = job.info;
+        assert_eq!((info.video, info.audio), ("transcode", "transcode"));
+        assert_eq!(info.video_in.as_deref(), Some("HEVC 3840×2160"));
+        assert_eq!(info.video_out.as_deref(), Some("H.264 1920×1080"));
+        assert_eq!((info.audio_in.as_deref(), info.audio_out.as_deref()), (Some("AC3"), Some("AAC")));
+        assert_eq!(info.encoder.as_deref(), Some("h264_qsv"));
+        assert_eq!((info.segments_ready, info.segments_total), (42, 0));
+
+        // Made as big as it comes (an older transcoder says nothing of it).
+        assert_eq!(live_info(&live("h264_qsv", None)).video_out.as_deref(), Some("H.264 3840×2160"));
+        let copied = live_info(&live("copy", Some(2160)));
+        assert_eq!((copied.video, copied.encoder, copied.pipeline.as_deref()), ("copy", None, Some("copy")));
+    }
 
     #[test]
     fn an_address_loses_its_credentials() {

@@ -1381,3 +1381,43 @@ async fn a_guide_that_breaks_off_leaves_nothing_behind() {
     let left: Vec<_> = std::fs::read_dir(&downloads).unwrap().flatten().map(|e| e.path()).collect();
     assert!(left.is_empty(), "{left:?}");
 }
+
+/// A player that can't show the picture as big as it is made (a browser and
+/// 4K H.264) asks for a smaller one: it gets it once, for its own session.
+#[tokio::test]
+async fn a_player_asks_for_a_smaller_picture_once() {
+    let (base, _) = provider().await;
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    let (bob, _) = app.user(&admin, "bob", json!({})).await;
+    let added = app
+        .post(
+            "/api/live/sources",
+            &admin,
+            json!({"name": "Provider", "kind": "m3u", "url": format!("{base}/list.m3u"), "max_connections": 2}),
+        )
+        .await;
+    assert_eq!(added.status, StatusCode::CREATED, "{:?}", added.body);
+    wait_until_read(&app, &admin).await;
+    let one = app.get("/api/live/channels", &admin).await.body[0]["id"].as_i64().unwrap();
+    let watching = app.post(&format!("/api/live/channels/{one}/watch"), &admin, json!({"client_id": "web"})).await;
+    let session = watching.body["session_id"].as_str().unwrap().to_owned();
+    let smaller = format!("/api/live/sessions/{session}/smaller");
+
+    // Someone else's session isn't theirs to change.
+    assert_eq!(app.post(&smaller, &bob, json!({})).await.status, StatusCode::GONE);
+    let asked = app.post(&smaller, &admin, json!({})).await;
+    assert_eq!(asked.status, StatusCode::OK, "{:?}", asked.body);
+    assert_eq!(asked.body, json!({"smaller": true}));
+    // Smaller already: nothing smaller to give.
+    assert_eq!(app.post(&smaller, &admin, json!({})).await.body, json!({"smaller": false}));
+
+    // Channels already made at 1080p or fewer have none smaller either.
+    let mut settings = app.get("/api/live/settings", &admin).await.body;
+    settings["max_height"] = json!(720);
+    assert_eq!(app.put("/api/live/settings", &admin, settings).await.status, StatusCode::OK);
+    let again = app.post(&format!("/api/live/channels/{one}/watch"), &admin, json!({"client_id": "tv"})).await;
+    let session = again.body["session_id"].as_str().unwrap();
+    let asked = app.post(&format!("/api/live/sessions/{session}/smaller"), &admin, json!({})).await;
+    assert_eq!(asked.body, json!({"smaller": false}));
+}

@@ -128,6 +128,9 @@ struct Viewer {
     /// Canceled when it is stopped from elsewhere: a stream reader's
     /// response ends, though others still watch the channel.
     stopped: CancellationToken,
+    /// The most lines its picture has, where its player asked for fewer
+    /// than the channel is made with ([`Tuners::smaller`]).
+    max_height: Option<u32>,
 }
 
 impl Viewer {
@@ -156,6 +159,18 @@ impl Viewer {
 /// watch session whose stream it reads instead is, while that is read. Its
 /// session is the one the player knows, so it stays: remotes list and
 /// command it, and a stop reaches the player.
+/// The most lines a picture has that a player asked to be smaller.
+pub const SMALLER: u32 = 1080;
+
+/// The most lines a viewer's picture has: the settings', or fewer where its
+/// player asked for them.
+fn job_height(settings: &LiveSettings, viewer: &Viewer) -> Option<u32> {
+    match (settings.max_height, viewer.max_height) {
+        (Some(set), Some(asked)) => Some(set.min(asked)),
+        (set, asked) => set.or(asked),
+    }
+}
+
 fn is_there(viewers: &HashMap<String, Viewer>, v: &Viewer) -> bool {
     v.is_there() || viewers.values().any(|reader| reader.reads_for(v))
 }
@@ -516,8 +531,9 @@ struct Tuner {
     feed: Mutex<Feed>,
     state: Mutex<TunerState>,
     stop: CancellationToken,
-    /// The transcoder's live job, once an HLS viewer came.
-    hls: tokio::sync::Mutex<Option<String>>,
+    /// The transcoder's live jobs, once an HLS viewer came: by the most
+    /// lines their picture has (one, unless a player asked for fewer).
+    hls: tokio::sync::Mutex<HashMap<Option<u32>, String>>,
     played: mpsc::UnboundedSender<Played>,
 }
 
@@ -709,7 +725,8 @@ impl Tuners {
         tuner.close();
         let (transcoder, tuner) = (self.transcoder.clone(), tuner.clone());
         tokio::spawn(async move {
-            if let Some(job) = tuner.hls.lock().await.take() {
+            let jobs: Vec<String> = tuner.hls.lock().await.drain().map(|(_, job)| job).collect();
+            for job in jobs {
                 let _ = transcoder.delete_live(&job).await;
             }
         });
@@ -848,6 +865,7 @@ impl Tuners {
                     commands: CommandWindow::default(),
                     volume: None,
                     stopped: CancellationToken::new(),
+                    max_height: None,
                 },
             );
             tuner
@@ -949,7 +967,7 @@ impl Tuners {
             feed: Mutex::new(Feed::new()),
             state: Mutex::new(TunerState::default()),
             stop: CancellationToken::new(),
-            hls: tokio::sync::Mutex::new(None),
+            hls: tokio::sync::Mutex::default(),
             played: self.played.clone(),
         });
         tracing::info!(channel = tuner.channel_id, name = %tuner.channel_name, source = %tuner.source_name, "live channel tuned");
@@ -1204,7 +1222,7 @@ impl Tuners {
     ) -> Result<Option<LivePlan>, AppError> {
         let viewer = self.viewer(session_id, user)?;
         let tuner = self.tuner_of(&viewer)?;
-        let job = self.hls_job(&tuner, settings, hwaccel).await?;
+        let job = self.hls_job(&tuner, settings, hwaccel, job_height(settings, &viewer)).await?;
         let deadline = Instant::now() + wait;
         loop {
             if let Some(plan) = tuner.state.lock().plan.clone() {
@@ -1232,15 +1250,16 @@ impl Tuners {
     ) -> Result<String, AppError> {
         let viewer = self.viewer(session_id, user)?;
         let tuner = self.tuner_of(&viewer)?;
+        let height = job_height(settings, &viewer);
         for attempt in 0..2 {
-            let job = self.hls_job(&tuner, settings, hwaccel).await?;
+            let job = self.hls_job(&tuner, settings, hwaccel, height).await?;
             match self.transcoder.live_playlist(&job).await {
                 Ok(text) => return Ok(text),
                 Err(err) if err.is_job_gone() && attempt == 0 => {
                     // The transcoder restarted, or gave up on it: once more.
                     let mut hls = tuner.hls.lock().await;
-                    if hls.as_deref() == Some(job.as_str()) {
-                        *hls = None;
+                    if hls.get(&height) == Some(&job) {
+                        hls.remove(&height);
                     }
                 }
                 Err(err) => return Err(self.why_not(&tuner, err.into())),
@@ -1259,10 +1278,18 @@ impl Tuners {
         }
     }
 
-    async fn hls_job(&self, tuner: &Arc<Tuner>, settings: &LiveSettings, hwaccel: HwAccel) -> Result<String, AppError> {
+    /// The channel's live job whose picture has at most `height` lines
+    /// (`None`: as many as it has), made when it is the first.
+    async fn hls_job(
+        &self,
+        tuner: &Arc<Tuner>,
+        settings: &LiveSettings,
+        hwaccel: HwAccel,
+        height: Option<u32>,
+    ) -> Result<String, AppError> {
         let mut hls = tuner.hls.lock().await;
-        if let Some(job) = hls.clone() {
-            return Ok(job);
+        if let Some(job) = hls.get(&height) {
+            return Ok(job.clone());
         }
         if let Some(why) = tuner.state.lock().hls_failed.clone() {
             return Err(AppError::Unavailable(format!("{} can't be shown: {why}", tuner.channel_name)));
@@ -1283,7 +1310,7 @@ impl Tuners {
                 owner: Some("Live TV".into()),
                 deinterlace: settings.deinterlace,
                 force_transcode: false,
-                max_height: settings.max_height,
+                max_height: height,
                 max_bitrate_kbps: None,
                 hwaccel,
                 window_seconds: Some(settings.timeshift_minutes * 60),
@@ -1310,8 +1337,8 @@ impl Tuners {
                 tracing::warn!(channel = t.channel_id, "sending a live channel to the transcoder failed: {err}");
             }
             let mut hls = t.hls.lock().await;
-            if hls.as_deref() == Some(job.as_str()) {
-                *hls = None;
+            if hls.get(&height) == Some(&job) {
+                hls.remove(&height);
             }
         });
         // What it is made into, for the administrators' view, once it is known.
@@ -1329,18 +1356,49 @@ impl Tuners {
                 }
             }
         });
-        *hls = Some(created.id.clone());
+        hls.insert(height, created.id.clone());
         Ok(created.id)
     }
 
+    /// The viewer's player can't show the channel's picture as big as it is
+    /// made (a browser that can't decode 4K H.264): its picture has at most
+    /// [`SMALLER`] lines from now, from a job of its own, while others
+    /// watching keep theirs. `false` when its picture is no bigger already.
+    pub fn smaller(&self, session_id: &str, user: &AuthUser, settings: &LiveSettings) -> Result<bool, AppError> {
+        let viewer = self.viewer(session_id, user)?;
+        let tuner = self.tuner_of(&viewer)?;
+        let made = tuner.state.lock().plan.as_ref().and_then(|plan| plan.height);
+        if job_height(settings, &viewer).is_some_and(|h| h <= SMALLER) || made.is_some_and(|h| h <= i64::from(SMALLER))
+        {
+            return Ok(false);
+        }
+        if let Some(v) = self.viewers.lock().get_mut(session_id) {
+            v.max_height = Some(SMALLER);
+        }
+        tracing::info!(
+            channel = tuner.channel_id,
+            session = session_id,
+            "a player asked for the channel at {SMALLER}p"
+        );
+        Ok(true)
+    }
+
     /// A segment of an HLS viewer's channel.
-    pub async fn segment(&self, session_id: &str, user: &AuthUser, name: &str) -> Result<reqwest::Response, AppError> {
+    pub async fn segment(
+        &self,
+        session_id: &str,
+        user: &AuthUser,
+        settings: &LiveSettings,
+        name: &str,
+    ) -> Result<reqwest::Response, AppError> {
         if !is_segment_name(name) {
             return Err(AppError::not_found(format!("no file {name}")));
         }
         let viewer = self.viewer(session_id, user)?;
         let tuner = self.tuner_of(&viewer)?;
-        let job = tuner.hls.lock().await.clone().ok_or_else(|| AppError::not_found("the channel is starting again"))?;
+        let height = job_height(settings, &viewer);
+        let job = tuner.hls.lock().await.get(&height).cloned();
+        let job = job.ok_or_else(|| AppError::not_found("the channel is starting again"))?;
         Ok(self.transcoder.live_segment(&job, name).await?)
     }
 
@@ -1871,7 +1929,19 @@ mod tests {
             commands: CommandWindow::default(),
             volume: None,
             stopped: CancellationToken::new(),
+            max_height: None,
         }
+    }
+
+    #[test]
+    fn a_viewer_asking_for_a_smaller_picture_gets_the_fewer_lines() {
+        let set = |max_height| LiveSettings { max_height, ..Default::default() };
+        let asked = Viewer { max_height: Some(SMALLER), ..viewer(1) };
+        assert_eq!(job_height(&set(None), &viewer(1)), None);
+        assert_eq!(job_height(&set(Some(1440)), &viewer(1)), Some(1440));
+        assert_eq!(job_height(&set(None), &asked), Some(1080));
+        assert_eq!(job_height(&set(Some(1440)), &asked), Some(1080));
+        assert_eq!(job_height(&set(Some(720)), &asked), Some(720));
     }
 
     #[test]

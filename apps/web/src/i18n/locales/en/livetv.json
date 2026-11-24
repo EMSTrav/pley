@@ -165,7 +165,7 @@
       "transcoded": "Transcoded channels",
       "transcodedHint": "The most lines a channel that has to be transcoded has.",
       "asSent": "As the channel sends it",
-      "h264Note": "H.264 channels are sent as they are, whatever their size.",
+      "h264Note": "H.264 channels are sent as they are, unless they're taller than this.",
       "channelsAndGuide": "Channels and guide",
       "readEvery": "Read again every",
       "everyHours_one": "{{count}} hour",
@@ -358,8 +358,8 @@
     "plan": {
       "radio": "radio",
       "asItIs": "{{source}} as it is",
-      "transcoded": "{{source}} → H.264 on {{encoder}}",
-      "transcodedDeinterlaced": "{{source}} → H.264 on {{encoder}}, deinterlaced",
+      "transcoded": "{{source}} → {{target}} on {{encoder}}",
+      "transcodedDeinterlaced": "{{source}} → {{target}} on {{encoder}}, deinterlaced",
       "processor": "the processor"
     },
     "rate": {

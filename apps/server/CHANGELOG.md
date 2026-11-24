@@ -22,6 +22,13 @@ describes how they are made.
 
 ### Fixed
 
+- A Live TV channel whose 4K picture the browser can't play plays at 1080p
+  instead of stopping.
+- The dashboard lists Live TV's channels among the transcoder's jobs, and
+  Live TV's Watching now says when a channel is scaled down
+  ("2160p HEVC → 1080p H.264").
+- The note under Settings → Live TV → Transcoded channels says that H.264
+  channels taller than the setting are scaled down too.
 - Home and a TV library's Recommended tab open at once after a big scan,
   also in a library of thousands of shows.
 - Music playing in the web app pauses once Play on… sends something to

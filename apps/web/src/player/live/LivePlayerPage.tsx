@@ -24,6 +24,7 @@ import { ApiError, errorMessage, isApiError } from "@/api/client";
 import { onServerEvent } from "@/api/events";
 import type { Control, ServerEvent } from "@/api/types";
 import {
+  askSmaller,
   busyConnections,
   CHANNEL_PAGE,
   leaveChannel,
@@ -315,6 +316,8 @@ function LivePlayer({
     let cancelled = false;
     let networkRetries = 0;
     let mediaRetries = 0;
+    // Asked for a smaller picture already (once per tune).
+    let askedSmaller = false;
     setStatus("tuning");
     setProblem(null);
     setBanner(false);
@@ -450,6 +453,21 @@ function LivePlayer({
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
             mediaRetries++;
             hls.recoverMediaError();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !askedSmaller && sessionRef.current) {
+            // The browser can't take the picture as big as it is made (4K
+            // H.264 it can't decode): a smaller one, made for this player.
+            askedSmaller = true;
+            const details = data.details;
+            void askSmaller(sessionRef.current.id)
+              .catch(() => false)
+              .then((smaller) => {
+                if (cancelled) return;
+                if (!smaller) return fail(brokeOff(channel.name, details));
+                hls.destroy();
+                if (hlsRef.current === hls) hlsRef.current = null;
+                mediaRetries = 0;
+                void playHls(url);
+              });
           } else {
             fail(answered ?? brokeOff(channel.name, data.details));
           }

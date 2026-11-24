@@ -160,7 +160,7 @@
       "transcoded": "轉碼頻道",
       "transcodedHint": "需要轉碼的頻道所允許的最大行數。",
       "asSent": "按頻道原始畫質",
-      "h264Note": "H.264 頻道按原樣傳送，無論其解析度如何。",
+      "h264Note": "H.264 頻道按原樣傳送，除非其解析度高於此設定。",
       "channelsAndGuide": "頻道與節目指南",
       "readEvery": "重新讀取頻率",
       "everyHours_other": "{{count}} 小時",
@@ -332,8 +332,8 @@
     "plan": {
       "radio": "廣播",
       "asItIs": "{{source}} 原樣",
-      "transcoded": "{{source}} → {{encoder}} 上的 H.264",
-      "transcodedDeinterlaced": "{{source}} → {{encoder}} 上的 H.264（已去隔行）",
+      "transcoded": "{{source}} → {{encoder}} 上的 {{target}}",
+      "transcodedDeinterlaced": "{{source}} → {{encoder}} 上的 {{target}}（已去隔行）",
       "processor": "處理器"
     },
     "rate": {

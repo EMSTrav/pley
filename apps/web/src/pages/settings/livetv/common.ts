@@ -38,17 +38,19 @@ const ENCODERS: Record<string, string> = {
   h264_videotoolbox: "VideoToolbox",
 };
 
-/** What the transcoder makes of a channel: "1080i MPEG-2 → H.264 on NVIDIA · MP2 → AAC". */
+/** What the transcoder makes of a channel: "1080i MPEG-2 → H.264 on NVIDIA · MP2 → AAC", "2160p HEVC → 1080p H.264 on Intel Quick Sync". */
 export function planLine(p: LivePlan): string {
   const lines = p.height ? `${p.height}${p.interlaced ? "i" : "p"}` : "";
   const source = [lines, CODECS[p.video_codec ?? ""] ?? p.video_codec].filter(Boolean).join(" ");
+  // Scaled down to the Transcoded channels setting: "1080p H.264".
+  const target = p.out_height && p.height && p.out_height < p.height ? `${p.out_height}p H.264` : "H.264";
   const encoder = p.video === "libx264" ? t("settings.plan.processor", { ns: "livetv" }) : (ENCODERS[p.video] ?? p.video);
   const video =
     p.video === "none"
       ? t("settings.plan.radio", { ns: "livetv" })
       : p.video === "copy"
         ? t("settings.plan.asItIs", { ns: "livetv", source })
-        : t(p.interlaced ? "settings.plan.transcodedDeinterlaced" : "settings.plan.transcoded", { ns: "livetv", source, encoder });
+        : t(p.interlaced ? "settings.plan.transcodedDeinterlaced" : "settings.plan.transcoded", { ns: "livetv", source, encoder, target });
   const audioIn = CODECS[p.audio_codec ?? ""] ?? p.audio_codec ?? "";
   const audio =
     p.audio === "none" ? "" : p.audio === "copy" ? t("settings.plan.asItIs", { ns: "livetv", source: audioIn }) : `${audioIn} → AAC`;

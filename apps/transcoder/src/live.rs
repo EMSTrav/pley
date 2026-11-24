@@ -667,6 +667,7 @@ fn plan<'a>(ff: &'a Ffmpeg, request: &LiveRequest, probed: &Probed) -> ApiResult
         interlaced: video.as_ref().is_some_and(|v| v.interlaced),
         audio_codec: audio.as_ref().map(|a| a.codec.clone()),
         audio_channels: audio.as_ref().and_then(|a| a.channels),
+        out_height: height,
         video: match (&video, encoder) {
             (None, _) => "none".into(),
             (Some(_), None) => "copy".into(),

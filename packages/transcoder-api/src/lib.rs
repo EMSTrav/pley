@@ -963,6 +963,10 @@ pub struct LivePlan {
     pub audio_codec: Option<String>,
     #[serde(default)]
     pub audio_channels: Option<i64>,
+    /// The lines of the picture made: the input's, or fewer where the live
+    /// request's `max_height` scales it down.
+    #[serde(default)]
+    pub out_height: Option<i64>,
     /// `copy`, or the encoder transcoding it (`h264_nvenc`, `libx264`…).
     pub video: String,
     /// `copy` or `aac`.

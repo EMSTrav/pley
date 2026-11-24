@@ -380,7 +380,7 @@ async fn session_media(state: &AppState, user: &AuthUser, session: &str, file: &
         )
             .into_response());
     }
-    let upstream = state.live.tuners.segment(session, user, file).await?;
+    let upstream = state.live.tuners.segment(session, user, &state.live.settings(), file).await?;
     let mut response = Response::builder()
         .header(header::CONTENT_TYPE, "video/mp2t")
         .header(header::CACHE_CONTROL, "private, max-age=60");
@@ -402,6 +402,18 @@ pub async fn session_plan(
     let hwaccel = state.settings.get().hwaccel;
     let plan = state.live.tuners.plan(&session, &user, &settings, hwaccel, Duration::from_secs(3)).await?;
     Ok(Json(plan))
+}
+
+/// The session's player couldn't show the channel's picture as big as it
+/// is made: `{ smaller: true }` when it gets a smaller one from now (its
+/// playlist read again), `false` when there is none smaller to give.
+pub async fn session_smaller(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(session): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let smaller = state.live.tuners.smaller(&session, &user, &state.live.settings())?;
+    Ok(Json(serde_json::json!({ "smaller": smaller })))
 }
 
 /// Stops watching: the connection is let go once nobody else watches.

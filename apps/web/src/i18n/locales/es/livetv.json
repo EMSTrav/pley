@@ -170,7 +170,7 @@
       "transcoded": "Canales transcodificados",
       "transcodedHint": "El máximo de líneas de un canal que hay que transcodificar.",
       "asSent": "Como lo envía el canal",
-      "h264Note": "Los canales H.264 se envían tal cual, sea cual sea su tamaño.",
+      "h264Note": "Los canales H.264 se envían tal cual, salvo si superan esta altura.",
       "channelsAndGuide": "Canales y guía",
       "readEvery": "Actualizar cada",
       "everyHours_one": "hora",
@@ -384,8 +384,8 @@
     "plan": {
       "radio": "radio",
       "asItIs": "{{source}} tal cual",
-      "transcoded": "{{source}} → H.264 en {{encoder}}",
-      "transcodedDeinterlaced": "{{source}} → H.264 en {{encoder}}, desentrelazado",
+      "transcoded": "{{source}} → {{target}} en {{encoder}}",
+      "transcodedDeinterlaced": "{{source}} → {{target}} en {{encoder}}, desentrelazado",
       "processor": "el procesador"
     },
     "rate": {

@@ -271,6 +271,8 @@ export interface LivePlan {
   interlaced: boolean;
   audio_codec: string | null;
   audio_channels: number | null;
+  /** The lines of the picture made: fewer than `height` where the Transcoded channels setting scales it down. */
+  out_height?: number | null;
   /** "copy", or the encoder transcoding it. */
   video: string;
   audio: string;
@@ -541,6 +543,15 @@ export function watchChannel(id: Id, clientId: string, takeOver?: Id, controls?:
  */
 export function livePlan(sessionId: string): Promise<LivePlan | null> {
   return api.get<LivePlan | null>(`/api/live/sessions/${encodeURIComponent(sessionId)}/plan`);
+}
+
+/**
+ * The session's player can't show the channel's picture as big as it is
+ * made: `true` when its playlist, read again, has a smaller one (1080p).
+ */
+export async function askSmaller(sessionId: string): Promise<boolean> {
+  const answer = await api.post<{ smaller: boolean }>(`/api/live/sessions/${encodeURIComponent(sessionId)}/smaller`, {});
+  return answer.smaller;
 }
 
 /** A channel sent as it is (H.264, AAC, or either alone): a player that reads MPEG-TS plays it from `stream.ts`. */
