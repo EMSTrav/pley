@@ -131,3 +131,40 @@ describe("Sidebar playlists", () => {
     expect(screen.queryByRole("link", { name: "Playlists" })).not.toBeInTheDocument();
   });
 });
+
+describe("Sidebar narrowed", () => {
+  const shows: Library = { id: 2, name: "TV Shows", kind: "shows", paths: [], item_count: 0, created_at: 0, scanned_at: null, scanning: false };
+
+  function Narrowing() {
+    const [collapsed, setCollapsed] = useState(false);
+    return <Sidebar open={false} onClose={() => {}} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />;
+  }
+
+  it("narrows to its icons, each still named, and widens again", async () => {
+    mockApi({ "GET /api/libraries": () => [shows] });
+    const user = userEvent.setup();
+    renderWithProviders(<Narrowing />);
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(await within(nav).findByRole("link", { name: "TV Shows" })).not.toHaveAttribute("title");
+    expect(within(nav).getByText("Libraries")).toBeInTheDocument();
+
+    await user.click(within(nav).getByRole("button", { name: "Collapse sidebar" }));
+    // Still read out by name, and shown on hover.
+    const library = within(nav).getByRole("link", { name: "TV Shows" });
+    expect(library).toHaveAttribute("title", "TV Shows");
+    expect(within(nav).getByRole("link", { name: "Home" })).toHaveAttribute("title", "Home");
+    expect(within(nav).queryByText("Libraries")).not.toBeInTheDocument();
+    const expand = within(nav).getByRole("button", { name: "Expand sidebar" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(expand);
+    expect(within(nav).getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the requests' count on a narrow sidebar, named on hover", async () => {
+    mockApi({ "GET /api/libraries": () => [], "GET /api/requests/summary": () => makeSummary({ access: "auto", manage: true, pending: 3, unseen: 1 }) });
+    renderWithProviders(<Sidebar open={false} onClose={() => {}} collapsed onToggle={() => {}} />);
+    const requests = await screen.findByRole("link", { name: "Requests 4 waiting" });
+    expect(requests).toHaveAttribute("title", "Requests");
+  });
+});

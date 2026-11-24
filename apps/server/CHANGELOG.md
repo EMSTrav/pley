@@ -9,6 +9,11 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- The web app's sidebar can be narrowed to its icons, with Collapse sidebar at
+  its foot; each browser remembers how it was left.
+
 ## [0.1.16] - 2026-11-24
 
 ### Added

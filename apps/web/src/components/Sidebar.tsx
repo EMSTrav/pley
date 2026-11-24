@@ -1,6 +1,23 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router";
-import { ArrowUpDown, BookHeadphones, Compass, Film, House, Inbox, List, LoaderCircle, Music, Plus, Settings, Tv, Tv2, X } from "lucide-react";
+import {
+  ArrowUpDown,
+  BookHeadphones,
+  Compass,
+  Film,
+  House,
+  Inbox,
+  List,
+  LoaderCircle,
+  Music,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Settings,
+  Tv,
+  Tv2,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLibraries } from "@/api/hooks";
 import { useLiveSummary } from "@/api/livetv";
@@ -9,7 +26,7 @@ import type { LibraryKind } from "@/api/types";
 import { useAuth } from "@/auth";
 import { cn } from "@/lib/cn";
 import { requestsBadge } from "@/lib/requests";
-import { Logo } from "./Logo";
+import { Logo, LogoMark } from "./Logo";
 import { keepTabInside } from "./Modal";
 import { SortLibrariesModal } from "./SortLibrariesModal";
 import { IconButton, Skeleton } from "./ui";
@@ -24,14 +41,35 @@ export function LibraryIcon({ kind, className }: { kind: LibraryKind; className?
   return <Music className={cls} />;
 }
 
-function NavItem({ to, icon, children, end, trailing }: { to: string; icon: ReactNode; children: ReactNode; end?: boolean; trailing?: ReactNode }) {
+/** The sidebar narrowed to its icons: each item's name read out and shown on hover, not written. */
+const Narrow = createContext(false);
+
+function NavItem({
+  to,
+  icon,
+  children,
+  end,
+  trailing,
+  name,
+}: {
+  to: string;
+  icon: ReactNode;
+  children: ReactNode;
+  end?: boolean;
+  trailing?: ReactNode;
+  /** Shown on hover when narrow, where `children` isn't plain text. */
+  name?: string;
+}) {
+  const narrow = useContext(Narrow);
   return (
     <NavLink
       to={to}
       end={end}
+      title={narrow ? (name ?? (typeof children === "string" ? children : undefined)) : undefined}
       className={({ isActive }) =>
         cn(
-          "group relative flex h-8 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors duration-150",
+          "group relative flex h-8 items-center gap-2.5 rounded-md text-sm font-medium transition-colors duration-150",
+          narrow ? "justify-center" : "px-3",
           isActive ? "bg-white/[0.07] text-fg" : "text-muted hover:bg-white/[0.04] hover:text-fg",
         )
       }
@@ -40,15 +78,31 @@ function NavItem({ to, icon, children, end, trailing }: { to: string; icon: Reac
         <>
           {isActive ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-accent" /> : null}
           <span className={cn("transition-colors", isActive ? "text-accent" : "text-subtle group-hover:text-muted")}>{icon}</span>
-          <span className="min-w-0 flex-1 truncate">{children}</span>
-          {trailing}
+          <span className={narrow ? "sr-only" : "min-w-0 flex-1 truncate"}>{children}</span>
+          {/* Narrow, a badge or spinner sits on the icon's corner. */}
+          {trailing && narrow ? (
+            <>
+              {" "}
+              <span className="absolute -right-0.5 -top-0.5 flex origin-top-right scale-75">{trailing}</span>
+            </>
+          ) : (
+            trailing
+          )}
         </>
       )}
     </NavLink>
   );
 }
 
-function SidebarContent({ onClose }: { onClose?: () => void }) {
+function SidebarContent({
+  onClose,
+  collapsed = false,
+  onToggle,
+}: {
+  onClose?: () => void;
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
   const { t } = useTranslation("components");
   const user = useAuth();
   const libs = useLibraries();
@@ -58,87 +112,116 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const showLive = live.data?.available ?? false;
 
   return (
-    <nav className="flex h-full flex-col overflow-y-auto px-3 pb-4 pt-4" aria-label={t("sidebar.main")}>
-      <div className="mb-5 flex items-center justify-between px-2">
-        <Link to="/" aria-label={t("sidebar.pleyHome")}>
-          <Logo />
-        </Link>
-        {onClose ? (
-          <IconButton label={t("sidebar.closeMenu")} size="sm" onClick={onClose}>
-            <X className="size-4" />
-          </IconButton>
-        ) : null}
-      </div>
-
-      <div className="space-y-0.5">
-        <NavItem to="/" end icon={<House className="size-4" />}>
-          {t("sidebar.home")}
-        </NavItem>
-        {showLive ? (
-          <NavItem to="/live" icon={<Tv2 className="size-4" />}>
-            {t("sidebar.liveTv")}
-          </NavItem>
-        ) : null}
-        <RequestsNav />
-      </div>
-
-      <div className="mb-0.5 mt-4 flex h-7 items-center justify-between pl-3 pr-1 text-xs font-medium text-subtle">
-        {t("sidebar.libraries")}
-        {(libs.data?.length ?? 0) > 1 ? (
-          <IconButton label={t("sidebar.sortLibraries")} size="xs" className="text-subtle" onClick={() => setSorting(true)}>
-            <ArrowUpDown className="size-3.5" />
-          </IconButton>
-        ) : null}
-      </div>
-      <SortLibrariesModal open={sorting} onClose={() => setSorting(false)} />
-      <div className="space-y-0.5">
-        {libs.isPending
-          ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="mx-3 my-1.5 h-5" />)
-          : libs.data?.map((lib) => (
-              <NavItem
-                key={lib.id}
-                to={libraryUrl(lib.id)}
-                icon={<LibraryIcon kind={lib.kind} className="size-4" />}
-                trailing={
-                  lib.scanning ? (
-                    <LoaderCircle className="size-3.5 animate-spin text-accent" aria-label={t("sidebar.scanning")} />
-                  ) : null
-                }
-              >
-                {lib.name}
-              </NavItem>
-            ))}
-        {/* Playlists sit with the libraries, as one more place to browse; the page explains how to make one. */}
-        {libs.data?.length ? (
-          <NavItem to="/playlists" icon={<List className="size-4" />}>
-            {t("sidebar.playlists")}
-          </NavItem>
-        ) : null}
-        {libs.data && libs.data.length === 0 ? (
-          user.is_admin ? (
-            <Link
-              to="/settings/libraries?add=1"
-              className="flex h-8 items-center gap-2.5 rounded-md px-3 text-sm text-muted transition-colors hover:bg-white/[0.04] hover:text-fg"
-            >
-              <Plus className="size-4 text-subtle" />
-              {t("sidebar.addLibrary")}
-            </Link>
-          ) : (
-            <p className="px-3 py-2 text-xs text-subtle">{t("sidebar.noLibraries")}</p>
-          )
-        ) : null}
-      </div>
-
-      <div className="flex-1" />
-
-      {user.is_admin ? (
-        <div className="mt-4 space-y-0.5">
-          <NavItem to="/settings" icon={<Settings className="size-4" />}>
-            {t("sidebar.settings")}
-          </NavItem>
+    <Narrow.Provider value={collapsed}>
+      <nav
+        className={cn("flex h-full flex-col overflow-y-auto overflow-x-hidden pb-4 pt-4", collapsed ? "px-2" : "px-3")}
+        aria-label={t("sidebar.main")}
+      >
+        <div className={cn("mb-5 flex items-center", collapsed ? "justify-center" : "justify-between px-2")}>
+          <Link to="/" aria-label={t("sidebar.pleyHome")}>
+            {collapsed ? <LogoMark className="size-7" /> : <Logo />}
+          </Link>
+          {onClose ? (
+            <IconButton label={t("sidebar.closeMenu")} size="sm" onClick={onClose}>
+              <X className="size-4" />
+            </IconButton>
+          ) : null}
         </div>
-      ) : null}
-    </nav>
+
+        <div className="space-y-0.5">
+          <NavItem to="/" end icon={<House className="size-4" />}>
+            {t("sidebar.home")}
+          </NavItem>
+          {showLive ? (
+            <NavItem to="/live" icon={<Tv2 className="size-4" />}>
+              {t("sidebar.liveTv")}
+            </NavItem>
+          ) : null}
+          <RequestsNav />
+        </div>
+
+        {collapsed ? (
+          // Narrow, a line parts the libraries from what's above.
+          <div className="mx-2 mb-2 mt-4 border-t border-border" role="separator" />
+        ) : (
+          <div className="mb-0.5 mt-4 flex h-7 items-center justify-between pl-3 pr-1 text-xs font-medium text-subtle">
+            {t("sidebar.libraries")}
+            {(libs.data?.length ?? 0) > 1 ? (
+              <IconButton label={t("sidebar.sortLibraries")} size="xs" className="text-subtle" onClick={() => setSorting(true)}>
+                <ArrowUpDown className="size-3.5" />
+              </IconButton>
+            ) : null}
+          </div>
+        )}
+        <SortLibrariesModal open={sorting} onClose={() => setSorting(false)} />
+        <div className="space-y-0.5">
+          {libs.isPending
+            ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="mx-3 my-1.5 h-5" />)
+            : libs.data?.map((lib) => (
+                <NavItem
+                  key={lib.id}
+                  to={libraryUrl(lib.id)}
+                  icon={<LibraryIcon kind={lib.kind} className="size-4" />}
+                  trailing={
+                    lib.scanning ? (
+                      <LoaderCircle className="size-3.5 animate-spin text-accent" aria-label={t("sidebar.scanning")} />
+                    ) : null
+                  }
+                >
+                  {lib.name}
+                </NavItem>
+              ))}
+          {/* Playlists sit with the libraries, as one more place to browse; the page explains how to make one. */}
+          {libs.data?.length ? (
+            <NavItem to="/playlists" icon={<List className="size-4" />}>
+              {t("sidebar.playlists")}
+            </NavItem>
+          ) : null}
+          {libs.data && libs.data.length === 0 ? (
+            user.is_admin ? (
+              <Link
+                to="/settings/libraries?add=1"
+                title={collapsed ? t("sidebar.addLibrary") : undefined}
+                className={cn(
+                  "flex h-8 items-center gap-2.5 rounded-md text-sm text-muted transition-colors hover:bg-white/[0.04] hover:text-fg",
+                  collapsed ? "justify-center" : "px-3",
+                )}
+              >
+                <Plus className="size-4 text-subtle" />
+                <span className={collapsed ? "sr-only" : undefined}>{t("sidebar.addLibrary")}</span>
+              </Link>
+            ) : collapsed ? null : (
+              <p className="px-3 py-2 text-xs text-subtle">{t("sidebar.noLibraries")}</p>
+            )
+          ) : null}
+        </div>
+
+        <div className="flex-1" />
+
+        {user.is_admin ? (
+          <div className="mt-4 space-y-0.5">
+            <NavItem to="/settings" icon={<Settings className="size-4" />}>
+              {t("sidebar.settings")}
+            </NavItem>
+          </div>
+        ) : null}
+        {onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+            className={cn(
+              "mt-0.5 flex h-8 items-center gap-2.5 rounded-md text-sm font-medium text-muted transition-colors hover:bg-white/[0.04] hover:text-fg",
+              collapsed ? "justify-center" : "px-3",
+            )}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4 text-subtle" /> : <PanelLeftClose className="size-4 text-subtle" />}
+            <span className={collapsed ? "sr-only" : undefined}>{collapsed ? t("sidebar.expand") : t("sidebar.collapse")}</span>
+          </button>
+        ) : null}
+      </nav>
+    </Narrow.Provider>
   );
 }
 
@@ -162,6 +245,7 @@ function RequestsNav() {
       ) : null}
       <NavItem
         to={requestsUrl}
+        name={data?.manage ? t("sidebar.requests") : t("sidebar.yourRequests")}
         icon={<Inbox className="size-4" />}
         trailing={
           // The spaces outside the spans, as names are made of their trimmed text: "Requests 3 waiting".
@@ -186,7 +270,18 @@ function RequestsNav() {
   );
 }
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Sidebar({
+  open,
+  onClose,
+  collapsed = false,
+  onToggle,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Narrowed to its icons, on a wide screen (the drawer is always whole). */
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
   const { t } = useTranslation("components");
   const location = useLocation();
   const drawerRef = useRef<HTMLElement>(null);
@@ -219,8 +314,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-border bg-surface lg:block">
-        <SidebarContent />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-30 hidden border-r border-border bg-surface transition-[width] duration-200 lg:block",
+          collapsed ? "w-16" : "w-60",
+        )}
+      >
+        <SidebarContent collapsed={collapsed} onToggle={onToggle} />
       </aside>
       {open ? (
         <div className="fixed inset-0 z-50 lg:hidden">
