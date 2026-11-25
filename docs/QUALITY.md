@@ -262,6 +262,16 @@ transcodes come in several sizes. Kodi and the Samsung and LG apps don't.
 - The players' ABR moves up only with room to spare: hls.js counts half the
   measured bandwidth for a move up (`abrBandWidthUpFactor` 0.5), and Media3
   waits for 20 s of buffer (`minDurationForQualityIncreaseMs`).
+- A size starts when the player asks for it, which takes the transcoder
+  seconds. hls.js would take that wait for a slow network: after a seek it
+  dropped to the smallest size, which started from cold too, and went back
+  up, every few seconds. The web app doesn't count the wait before the
+  first byte of a segment that starts a size (the first after a switch, a
+  seek or the start), nor switches down in a hurry during it
+  (`player/coldStarts.ts`). The segments after it count in full, so a size
+  the transcoder can't make in real time still steps down. After a step
+  down, it moves up again only 30 s later, twice as long each time a move
+  up soon steps down again, up to 4 minutes.
 
 While a session has several sizes (`PlaybackInfo.adaptive`), Automatic
 leaves the network to the player's ABR and watches only for what sizes can't

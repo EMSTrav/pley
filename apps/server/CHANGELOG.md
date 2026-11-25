@@ -9,6 +9,11 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Fixed
+
+- A transcode in the browser no longer jumps between sizes every few seconds
+  after a seek.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added

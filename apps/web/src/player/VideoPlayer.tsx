@@ -62,6 +62,7 @@ import { AutoQuality, ORIGINAL_ID, storedMemory, type AutoMemory, type AutoStep 
 import { autoLadder, chooseQuality, modeFor, namedFor, ORIGINAL, qualitiesFor, qualityById, qualityLabel } from "./quality";
 import { heardOriginalOnly, networkStart, reportCeiling, serverOriginalOnly } from "./network";
 import { ChaptersMenu } from "./ChaptersMenu";
+import { coldStartConfig } from "./coldStarts";
 import type { SubtitleSources } from "./FindSubtitles";
 import { SeekBar } from "./SeekBar";
 import { methodLabel, PlaybackDetails } from "./PlaybackDetails";
@@ -900,6 +901,9 @@ export function VideoPlayer({ item, startMs, fileId, audio: initialAudio, sub: i
                 fragLoadingMaxRetry: 6,
                 manifestLoadingMaxRetry: 2,
                 levelLoadingMaxRetry: 2,
+                // A size the transcoder starts takes seconds: that wait isn't
+                // the network's, and a step down holds a while.
+                ...coldStartConfig(Hls),
               });
               hlsRef.current = hls;
               hls.on(Hls.Events.ERROR, (_evt, data: ErrorData) => {
