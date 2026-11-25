@@ -191,6 +191,11 @@
       "dolbyVisionNeeds": "Dolby Vision 需要帶 libplacebo 的 FFmpeg，以及可透過 Vulkan 存取的 GPU：<builds/>。使用 --ffmpeg 和 --ffprobe，或在 pley.toml 中指定其位置。",
       "tonemapInstead": "{{reason}}：{{fallback}}",
       "tonemapWithAnother": "{{reason}}：改用其他方式進行色調對映轉碼。",
+      "autoHandsOff": {
+        "both": "自動模式使用 libplacebo；GPU 跟不上時，Dolby Vision 改由 OpenCL、HDR10 改由 Quick Sync 進行色調對映。選擇 libplacebo 可一律使用它。",
+        "dolbyVision": "自動模式使用 libplacebo；GPU 跟不上時，Dolby Vision 改由 OpenCL 進行色調對映。選擇 libplacebo 可一律使用它。",
+        "hdr10": "自動模式使用 libplacebo；GPU 跟不上時，HDR10 改由 Quick Sync 進行色調對映。選擇 libplacebo 可一律使用它。"
+      },
       "builds": {
         "windows": "Pley 的 Windows 安裝程式隨附的 FFmpeg、<gyan>gyan.dev 的完整構建</gyan> 或 <jellyfin>jellyfin-ffmpeg</jellyfin>",
         "linux": "Pley 的 Docker 映像隨附的 FFmpeg，或 <jellyfin>jellyfin-ffmpeg</jellyfin>",

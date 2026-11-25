@@ -102,6 +102,8 @@ async fn the_system_says_what_the_transcoder_can_do() {
     );
     assert_eq!(tc["with_accel"]["nvenc"]["hardware_decoding"], json!(false));
     assert_eq!(tc["tonemapping"], json!(["zscale"]));
+    // Automatic hands nothing from libplacebo where the tests for it failed.
+    assert_eq!((tc["dolby_vision_on_opencl"].clone(), tc["quick_sync_tonemap"].clone()), (json!(false), json!(false)));
     assert_eq!(tc["chromaprint"], json!(false));
     assert_eq!(tc["throttling"], json!(true));
     assert_eq!(tc["active_encoder"], json!("h264_qsv"), "Automatic");
@@ -116,6 +118,15 @@ async fn the_system_says_what_the_transcoder_can_do() {
     assert_eq!((tc["hardware_decoding"].clone(), tc["chromaprint"].clone()), (json!(false), json!(false)));
     assert_eq!(tc["with_accel"], json!({}));
     assert_eq!(tc["memory"], json!(null));
+}
+
+/// Where Quick Sync passed the tests for Dolby Vision on OpenCL and its own
+/// tone mapping, Settings says Automatic hands them over when the GPU is busy.
+#[tokio::test]
+async fn the_system_says_what_automatic_tone_mapping_hands_over() {
+    let (app, admin) = with_transcoder(Capabilities { qsv_opencl_dovi: true, qsv_tonemap: true, ..intel() }).await;
+    let tc = app.get("/api/system", &admin).await.body["transcoder"].clone();
+    assert_eq!((tc["dolby_vision_on_opencl"].clone(), tc["quick_sync_tonemap"].clone()), (json!(true), json!(true)));
 }
 
 #[tokio::test]

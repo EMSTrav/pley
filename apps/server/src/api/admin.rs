@@ -594,6 +594,11 @@ pub struct TranscoderSummary {
     with_accel: HashMap<pley_transcoder_api::HwAccel, crate::settings::AccelUse>,
     tonemapping: Vec<String>,
     dolby_vision: bool,
+    /// Where the GPU can't keep up with libplacebo, Automatic tone maps Dolby
+    /// Vision on OpenCL instead (Quick Sync on Windows).
+    dolby_vision_on_opencl: bool,
+    /// …and HDR10 with Quick Sync's scaler.
+    quick_sync_tonemap: bool,
     /// Audio fingerprints, which find intros and credits that chapters don't name.
     chromaprint: bool,
     /// FFmpeg can hold transcodes back (6.1 and newer).
@@ -670,6 +675,8 @@ pub async fn system(State(state): State<AppState>, AdminUser(admin): AdminUser) 
             .map(|i| i.capabilities.tonemappers.iter().map(|t| t.as_str().to_owned()).collect())
             .unwrap_or_default(),
         dolby_vision: info.as_ref().is_some_and(|i| i.capabilities.dolby_vision),
+        dolby_vision_on_opencl: info.as_ref().is_some_and(|i| i.capabilities.qsv_opencl_dovi),
+        quick_sync_tonemap: info.as_ref().is_some_and(|i| i.capabilities.qsv_tonemap),
         chromaprint: info.as_ref().is_some_and(|i| i.capabilities.chromaprint),
         throttling: info.as_ref().is_some_and(|i| i.capabilities.readrate),
         memory: info.as_ref().map(|i| {

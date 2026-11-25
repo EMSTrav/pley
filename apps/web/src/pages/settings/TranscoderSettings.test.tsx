@@ -147,6 +147,26 @@ describe("TranscoderSettings on this server's hardware", () => {
     expect(screen.getByText("Intel Quick Sync encodes here: this applies only when software encodes instead.")).toBeInTheDocument();
   });
 
+  it("says when Automatic tone maps with another than libplacebo", async () => {
+    const user = userEvent.setup();
+    const quickSync = {
+      ...intel,
+      tonemapping: ["libplacebo", "opencl", "zscale", "vpp_qsv"],
+      dolby_vision: true,
+      dolby_vision_on_opencl: true,
+      quick_sync_tonemap: true,
+      throttling: true,
+    };
+    mockApi({ "GET /api/settings": () => SETTINGS, "GET /api/system": () => system(quickSync) });
+    renderWithProviders(<TranscoderSettings />);
+    expect(await screen.findByRole("option", { name: /^Automatic · libplacebo$/ })).toBeEnabled();
+    const note = /hands Dolby Vision to OpenCL and HDR10 to Quick Sync while the GPU can't keep up with it/;
+    expect(screen.getByText(note)).toBeInTheDocument();
+    // libplacebo chosen keeps it.
+    await user.selectOptions(screen.getByRole("combobox", { name: "HDR tone mapping" }), "libplacebo");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+  });
+
   it("says what a choice saved before does here instead", async () => {
     mockApi({
       "GET /api/settings": () => ({ ...SETTINGS, hwaccel: "nvenc", tonemapping: "libplacebo" }),

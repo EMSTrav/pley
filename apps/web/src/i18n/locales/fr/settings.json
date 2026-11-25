@@ -193,6 +193,11 @@
       "dolbyVisionNeeds": "Le Dolby Vision nécessite un FFmpeg avec libplacebo et un GPU qu’il atteint par Vulkan : <builds/>. Indiquez-le à Pley avec --ffmpeg et --ffprobe, ou dans pley.toml.",
       "tonemapInstead": "{{reason}} : {{fallback}}",
       "tonemapWithAnother": "{{reason}} : les transcodages utilisent un autre mappage tonal à la place.",
+      "autoHandsOff": {
+        "both": "Automatique utilise libplacebo, et confie le Dolby Vision à OpenCL et le HDR10 à Quick Sync tant que le GPU ne suit pas. Choisissez libplacebo pour l’utiliser toujours.",
+        "dolbyVision": "Automatique utilise libplacebo, et confie le Dolby Vision à OpenCL tant que le GPU ne suit pas. Choisissez libplacebo pour l’utiliser toujours.",
+        "hdr10": "Automatique utilise libplacebo, et confie le HDR10 à Quick Sync tant que le GPU ne suit pas. Choisissez libplacebo pour l’utiliser toujours."
+      },
       "builds": {
         "windows": "celui qu’apporte l’installateur de Pley pour Windows, <gyan>la version complète de gyan.dev</gyan> ou <jellyfin>jellyfin-ffmpeg</jellyfin>",
         "linux": "celui qu’apporte l’image Docker de Pley, ou <jellyfin>jellyfin-ffmpeg</jellyfin>",

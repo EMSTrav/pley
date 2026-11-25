@@ -14,6 +14,7 @@ import {
   type AccelFit,
   accelChoices,
   accelReason,
+  autoHandsOff,
   capitalize,
   choiceLabel,
   decodingReason,
@@ -168,6 +169,8 @@ export function TranscoderSettings() {
         const preset = presetNote(form.hwaccel, system.data);
         const tonemaps = tonemapChoices(system.data, form.hwaccel);
         const tonemapProblem = tonemapReason(form.tonemapping, system.data);
+        // Automatic can tone map with another than the one its choice names.
+        const handsOff = autoHandsOff(form.tonemapping, form.hwaccel, system.data);
         // A combination saved before: the transcoder doesn't use Vulkan then.
         const tonemapClash = tonemapProblem ? null : tonemapAccelReason(form.tonemapping, form.hwaccel, system.data);
         const decodingProblem = decodingReason(form.hwaccel, system.data);
@@ -294,6 +297,8 @@ export function TranscoderSettings() {
                   </Note>
                 ) : fittedNote("tonemapping") ? (
                   <Note>{fittedNote("tonemapping")}</Note>
+                ) : handsOff ? (
+                  <Note>{t(`transcoder.video.autoHandsOff.${handsOff}`)}</Note>
                 ) : null}
               </Row>
             </Group>

@@ -129,6 +129,24 @@ export function tonemapChoices(system: SystemInfo | undefined, accel: HwAccel): 
   });
 }
 
+/**
+ * What Automatic tone mapping hands from libplacebo to another tone mapper
+ * while the GPU can't keep up with libplacebo, on Quick Sync: Dolby Vision
+ * to OpenCL, HDR10 to Quick Sync's scaler, as its start-up tests allow.
+ * `null` where it never does (another tone mapper chosen, another
+ * acceleration, or libplacebo not the one Automatic starts with).
+ */
+export function autoHandsOff(
+  mode: ToneMapping,
+  accel: HwAccel,
+  system: SystemInfo | undefined,
+): "both" | "dolbyVision" | "hdr10" | null {
+  const tc = knownTranscoder(system);
+  if (!tc || mode !== "auto" || tc.tonemapping[0] !== "libplacebo" || accelInUse(accel, system) !== "qsv") return null;
+  const [dv, hdr10] = [tc.dolby_vision_on_opencl === true, tc.quick_sync_tonemap === true];
+  return dv && hdr10 ? "both" : dv ? "dolbyVision" : hdr10 ? "hdr10" : null;
+}
+
 /** Why the tone mapper `mode` names can't work here, or `null`. */
 export function tonemapReason(mode: ToneMapping, system: SystemInfo | undefined): string | null {
   const tc = knownTranscoder(system);

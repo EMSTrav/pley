@@ -1213,6 +1213,13 @@ export interface TranscoderInfo {
   with_accel?: Partial<Record<HwAccel, AccelUse>>;
   tonemapping: string[];
   dolby_vision: boolean;
+  /**
+   * Where the GPU can't keep up with libplacebo, Automatic tone maps Dolby
+   * Vision on OpenCL instead (Quick Sync on Windows). Absent from servers before it.
+   */
+  dolby_vision_on_opencl?: boolean;
+  /** …and HDR10 with Quick Sync's scaler. Absent from servers before it. */
+  quick_sync_tonemap?: boolean;
   /** Audio fingerprints, which find intros and credits that chapters don't name. */
   chromaprint: boolean;
   /** FFmpeg can hold transcodes back (6.1 and newer). */

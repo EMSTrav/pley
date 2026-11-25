@@ -9,6 +9,12 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings → Transcoder says when Automatic tone mapping hands Dolby Vision to
+  OpenCL or HDR10 to Quick Sync, which it does where the GPU can't keep up
+  with libplacebo.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added

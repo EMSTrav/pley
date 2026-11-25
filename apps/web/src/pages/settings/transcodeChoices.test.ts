@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HwAccel, SystemInfo, ToneMapping } from "@/api/types";
-import { decodingReason, fitToAccel, presetNote, tonemapAccelReason, tonemapChoices, tonemapGoesWith } from "./transcodeChoices";
+import { autoHandsOff, decodingReason, fitToAccel, presetNote, tonemapAccelReason, tonemapChoices, tonemapGoesWith } from "./transcodeChoices";
 
 /** Pley on Windows with an NVIDIA card whose NVENC encodes HEVC, but not in 10 bits. */
 const nvidia = {
@@ -81,5 +81,45 @@ describe("what goes with the hardware acceleration chosen", () => {
   it("says what the software preset applies to", () => {
     expect(presetNote("nvenc", nvidia)).toBe("NVIDIA NVENC encodes here: this applies to transcodes that keep HDR, and when software encodes instead.");
     expect(presetNote("none", nvidia)).toBeNull();
+  });
+});
+
+/** Pley on Windows with Intel graphics, whose Quick Sync passed the tests for Dolby Vision on OpenCL and its own tone mapping. */
+const quickSync = {
+  os: "windows",
+  transcoder: {
+    available: true,
+    managed: true,
+    encoders: ["h264_qsv", "hevc_qsv", "libx264"],
+    accels: ["qsv"],
+    hardware_decoding: true,
+    tonemapping: ["libplacebo", "opencl", "zscale", "vpp_qsv"],
+    dolby_vision: true,
+    dolby_vision_on_opencl: true,
+    quick_sync_tonemap: true,
+  },
+} as unknown as SystemInfo;
+
+describe("what Automatic tone mapping hands from libplacebo", () => {
+  it("says what goes to OpenCL and Quick Sync, on Quick Sync, as its tests allow", () => {
+    expect(autoHandsOff("auto", "auto", quickSync)).toBe("both");
+    expect(autoHandsOff("auto", "qsv", quickSync)).toBe("both");
+    const tc = quickSync.transcoder;
+    const only = (flags: object) => ({ ...quickSync, transcoder: { ...tc, ...flags } });
+    expect(autoHandsOff("auto", "qsv", only({ quick_sync_tonemap: false }))).toBe("dolbyVision");
+    expect(autoHandsOff("auto", "qsv", only({ dolby_vision_on_opencl: false }))).toBe("hdr10");
+    // A server before the flags, or whose tests failed: nothing to say.
+    expect(autoHandsOff("auto", "qsv", only({ dolby_vision_on_opencl: undefined, quick_sync_tonemap: undefined }))).toBeNull();
+  });
+
+  it("says nothing where it keeps libplacebo", () => {
+    // libplacebo chosen keeps it however busy the GPU is.
+    expect(autoHandsOff("libplacebo", "qsv", quickSync)).toBeNull();
+    expect(autoHandsOff("opencl", "qsv", quickSync)).toBeNull();
+    // Software encoding: no Quick Sync to hand to.
+    expect(autoHandsOff("auto", "none", quickSync)).toBeNull();
+    // Automatic doesn't start with libplacebo.
+    expect(autoHandsOff("auto", "auto", nvidia)).toBeNull();
+    expect(autoHandsOff("auto", "auto", undefined)).toBeNull();
   });
 });

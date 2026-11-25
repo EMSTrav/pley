@@ -5187,6 +5187,8 @@ interface SystemInfo {
     } };
     tonemapping: string[];          // available tone mappers: ["libplacebo", "opencl", "zscale"]
     dolby_vision: boolean;          // Dolby Vision profile 5 can be tone-mapped correctly
+    dolby_vision_on_opencl: boolean; // Automatic tone maps Dolby Vision on OpenCL where the GPU can't keep up with libplacebo
+    quick_sync_tonemap: boolean;    // …and HDR10 with Quick Sync's scaler
     chromaprint: boolean;           // audio fingerprints find intros and credits; without, only chapters
     throttling: boolean;            // FFmpeg can throttle transcodes (6.1 and newer)
     memory: { available: boolean; reason?: string; path?: string; budget_bytes: number } | null;
