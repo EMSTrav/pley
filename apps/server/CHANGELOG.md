@@ -9,6 +9,12 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Live TV plays a channel as the provider sends it when the device decodes
+  it (HEVC and 10-bit included), and transcodes only for players that need it.
+- Playback details in the web app's Live TV player.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added
