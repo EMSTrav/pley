@@ -547,6 +547,25 @@
       }
     }
   },
+  "makeMix": {
+    "open": "生成混合歌单",
+    "title": "生成混合歌单",
+    "describe": "最多选择五位艺人。Pley 会把他们的歌曲与风格最接近的艺人的歌曲混在一起，并保存到你的播放列表。",
+    "describeAi": "最多选择五位艺人。AI 服务仅从你的媒体库中挑选并排列他们及风格最接近的艺人的歌曲，混合歌单会保存到你的播放列表。",
+    "pick_other": "最多选择 {{count}} 位艺人",
+    "remove": "移除 {{artist}}",
+    "search": "查找艺人",
+    "artists": "艺人",
+    "noArtists": "没有这个名字的艺人。",
+    "prompt": "用在什么场合？",
+    "promptHint": "可选。只有这些文字以及歌曲的标题、专辑和艺人会发送给 AI 服务。",
+    "promptExample": "深夜长途驾驶",
+    "length": "长度",
+    "tracks_other": "{{count, number}} 首歌曲",
+    "make": "生成",
+    "making": "正在生成…",
+    "made_other": "{{title}}：{{count, number}} 首歌曲"
+  },
   "search": {
     "documentTitle": "搜索",
     "documentTitleQuery": "搜索：{{q}}",

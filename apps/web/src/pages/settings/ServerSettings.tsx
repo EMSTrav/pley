@@ -28,6 +28,10 @@ const KEYS = [
   "tvdb_pin",
   "music_metadata",
   "book_metadata",
+  "ai_mixes",
+  "ai_endpoint",
+  "ai_model",
+  "ai_api_key",
   "read_nfo",
   "scan_interval_minutes",
   "watch_libraries",
@@ -199,6 +203,49 @@ ${form.tvdb_pin}`}
                 />
               </p>
             </Group>
+
+            {form.ai_mixes !== undefined ? (
+              <Group title={t("server.ai.title")} description={t("server.ai.description")}>
+                <Row label={t("server.ai.mixes")} hint={t("server.ai.mixesHint")}>
+                  <Toggle
+                    checked={form.ai_mixes}
+                    onChange={(v) => set("ai_mixes", v)}
+                    label={t("server.ai.mixesToggle")}
+                    disabled={!form.ai_mixes && !((form.ai_endpoint ?? "").trim() && (form.ai_model ?? "").trim())}
+                  />
+                </Row>
+                <Row label={t("server.ai.endpoint")} htmlFor="ai-endpoint" hint={t("server.ai.endpointHint")}>
+                  <TextInput
+                    id="ai-endpoint"
+                    value={form.ai_endpoint ?? ""}
+                    onChange={(e) => set("ai_endpoint", e.target.value)}
+                    placeholder="https://api.openai.com/v1"
+                    spellCheck={false}
+                    className="w-full"
+                  />
+                </Row>
+                <Row label={t("server.ai.model")} htmlFor="ai-model" hint={t("server.ai.modelHint")}>
+                  <TextInput
+                    id="ai-model"
+                    value={form.ai_model ?? ""}
+                    onChange={(e) => set("ai_model", e.target.value)}
+                    placeholder="gpt-4o-mini"
+                    spellCheck={false}
+                    className="w-full"
+                  />
+                </Row>
+                <Row label={t("server.ai.key")} htmlFor="ai-key" hint={t("server.ai.keyHint")}>
+                  <SecretInput id="ai-key" what="key" value={form.ai_api_key ?? ""} onChange={(v) => set("ai_api_key", v)} />
+                  <TestButton
+                    key={`${form.ai_endpoint}
+${form.ai_model}
+${form.ai_api_key}`}
+                    label={t("server.ai.test")}
+                    test={{ service: "ai", endpoint: form.ai_endpoint, model: form.ai_model, api_key: form.ai_api_key }}
+                  />
+                </Row>
+              </Group>
+            ) : null}
 
             <Group title={t("server.subtitles.title")} description={t("server.subtitles.description")}>
               <Row

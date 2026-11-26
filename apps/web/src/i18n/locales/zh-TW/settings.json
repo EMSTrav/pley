@@ -67,6 +67,20 @@
       "languageHint": "適用於 TMDB 和 TheTVDB。TVmaze 僅提供英文。",
       "attribution": "本產品使用 TMDB API，但未獲得 TMDB 的認可或認證。影集中介資料來自 <tvdb>TheTVDB</tvdb>。TVmaze 的影集資料採用 <license>CC BY-SA</license> 許可；MusicBrainz 的音樂資料屬於公有領域。"
     },
+    "ai": {
+      "title": "AI 混合歌單",
+      "description": "混合歌單可以請 AI 服務挑選、排列歌曲並為其命名。傳送給它的只有建立者所能存取的媒體庫中的歌曲、專輯和藝人名稱，絕不包括檔案或帳戶。關閉時由 Pley 自己產生混合歌單。",
+      "mixes": "AI 混合歌單",
+      "mixesHint": "需要在下方填寫服務位址和模型。",
+      "mixesToggle": "請 AI 服務產生混合歌單",
+      "endpoint": "位址",
+      "endpointHint": "任何提供 OpenAI 聊天 API 的服務：OpenAI、OpenRouter，或你自己網路中的 Ollama、LM Studio（http://localhost:11434/v1）。",
+      "model": "模型",
+      "modelHint": "使用服務給出的名稱，例如 gpt-4o-mini 或 llama3.1。",
+      "key": "API 金鑰",
+      "keyHint": "本機服務沒有金鑰時留空。每產生一個混合歌單就是一次請求，服務可能會收費。",
+      "test": "測試 AI 服務"
+    },
     "subtitles": {
       "title": "字幕",
       "description": "在播放器的字幕選單中，從 OpenSubtitles 搜尋電影或單集的字幕。",

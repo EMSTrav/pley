@@ -67,6 +67,15 @@ pub struct Settings {
     /// Look audiobooks up on Open Library, and Audnexus for those with an ASIN
     /// ([`crate::providers::books`]).
     pub book_metadata: bool,
+    /// Mixes may ask an AI service to choose and order their tracks
+    /// ([`crate::mixes`]): an OpenAI-compatible API at `ai_endpoint` (its
+    /// base, such as `https://api.openai.com/v1`), asked for `ai_model`,
+    /// with `ai_api_key` (empty for a local service without one). Off by
+    /// default; without it, Pley makes mixes itself.
+    pub ai_mixes: bool,
+    pub ai_endpoint: String,
+    pub ai_model: String,
+    pub ai_api_key: String,
     /// Read the NFO files Kodi, Jellyfin and the like keep next to titles:
     /// their ids decide the match and their fields win over the online
     /// source's (see [`crate::library::nfo`]).
@@ -232,6 +241,10 @@ impl Default for Settings {
             tvdb_pin: String::new(),
             music_metadata: true,
             book_metadata: true,
+            ai_mixes: false,
+            ai_endpoint: String::new(),
+            ai_model: String::new(),
+            ai_api_key: String::new(),
             read_nfo: true,
             strm_files: false,
             hwaccel: HwAccel::Auto,
@@ -611,6 +624,10 @@ pub struct SettingsPatch {
     pub tvdb_pin: Option<String>,
     pub music_metadata: Option<bool>,
     pub book_metadata: Option<bool>,
+    pub ai_mixes: Option<bool>,
+    pub ai_endpoint: Option<String>,
+    pub ai_model: Option<String>,
+    pub ai_api_key: Option<String>,
     pub read_nfo: Option<bool>,
     pub strm_files: Option<bool>,
     pub hwaccel: Option<HwAccel>,
@@ -738,6 +755,30 @@ impl SettingsStore {
         }
         if let Some(v) = patch.book_metadata {
             next.book_metadata = v;
+        }
+        if let Some(v) = patch.ai_endpoint {
+            let v = v.trim().trim_end_matches('/').to_owned();
+            let web = v.starts_with("https://") || v.starts_with("http://");
+            if !(v.is_empty() || (web && v.len() <= 500 && reqwest::Url::parse(&v).is_ok())) {
+                return Err(AppError::bad_request("the AI service's address must be an http:// or https:// address"));
+            }
+            next.ai_endpoint = v;
+        }
+        if let Some(v) = patch.ai_model {
+            let v = v.trim().to_owned();
+            if v.len() > 200 {
+                return Err(AppError::bad_request("the AI model's name is too long"));
+            }
+            next.ai_model = v;
+        }
+        if let Some(v) = patch.ai_api_key {
+            next.ai_api_key = v.trim().to_owned();
+        }
+        if let Some(v) = patch.ai_mixes {
+            next.ai_mixes = v;
+        }
+        if next.ai_mixes && (next.ai_endpoint.is_empty() || next.ai_model.is_empty()) {
+            return Err(AppError::bad_request("AI mixes need the AI service's address and a model"));
         }
         if let Some(v) = patch.read_nfo {
             next.read_nfo = v;

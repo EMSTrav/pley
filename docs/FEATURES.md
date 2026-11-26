@@ -110,6 +110,9 @@ In the web and desktop apps only, for now.
 - Collections from TMDB, hand-picked or smart, grouped into categories,
   with administrators choosing which appear on Home.
 - Playlists, ordered or smart.
+- Mixes: a music playlist made from a few artists, with the artists most
+  like them, chosen and named by an AI service when one is set up
+  ([AI mixes](CONFIGURATION.md#ai-mixes)).
 
 ## Requests
 

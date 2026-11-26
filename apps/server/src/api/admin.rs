@@ -142,6 +142,8 @@ pub enum Service {
     Tvdb,
     Tvmaze,
     Musicbrainz,
+    /// The AI service mixes ask.
+    Ai,
     /// Audnexus and Open Library.
     Audiobooks,
     Transcoder,
@@ -155,6 +157,7 @@ impl Service {
             Service::Tvdb => "TheTVDB",
             Service::Tvmaze => "TVmaze",
             Service::Musicbrainz => "MusicBrainz",
+            Service::Ai => "The AI service",
             Service::Audiobooks => "Audnexus or Open Library",
             Service::Transcoder => "The transcoder",
             Service::Opensubtitles => "OpenSubtitles",
@@ -177,6 +180,11 @@ pub struct TestRequest {
     username: Option<String>,
     #[serde(default)]
     password: Option<String>,
+    /// The AI service's address and model, likewise.
+    #[serde(default)]
+    endpoint: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -205,6 +213,9 @@ pub async fn test_service(
     if req.service == Service::Opensubtitles {
         return Json(test_opensubtitles(&state, &req).await);
     }
+    if req.service == Service::Ai {
+        return Json(test_ai(&settings, &req).await);
+    }
     let saved = if req.service == Service::Tvdb { &settings.tvdb_api_key } else { &settings.tmdb_api_key };
     let key = req.api_key.as_deref().unwrap_or(saved).trim().to_owned();
     let pin = req.pin.as_deref().unwrap_or(&settings.tvdb_pin).trim().to_owned();
@@ -222,7 +233,7 @@ pub async fn test_service(
             Service::Tvmaze => state.metadata.check_provider(Check::Tvmaze).await.map(|()| None),
             Service::Musicbrainz => state.metadata.check_provider(Check::MusicBrainz).await.map(|()| None),
             Service::Audiobooks => state.metadata.check_provider(Check::Books).await.map(|()| None),
-            Service::Opensubtitles => unreachable!("tested above"),
+            Service::Opensubtitles | Service::Ai => unreachable!("tested above"),
             Service::Transcoder => match state.transcoder.status().await {
                 Ok(status) => Ok(Some(match status.ffmpeg_version {
                     Some(ffmpeg) => format!("pley-transcoder {} with ffmpeg {ffmpeg}", status.version),
@@ -305,6 +316,45 @@ async fn test_opensubtitles(state: &AppState, req: &TestRequest) -> TestResult {
         Err(_) => (false, format!("OpenSubtitles didn't answer within {} seconds.", TEST_TIMEOUT.as_secs())),
     };
     TestResult { ok, message, refused, ms }
+}
+
+/// The AI service mixes ask: one short request to the address and model
+/// given, else the saved ones. The saved key goes only to the saved address.
+async fn test_ai(settings: &crate::settings::Settings, req: &TestRequest) -> TestResult {
+    let endpoint = req.endpoint.as_deref().unwrap_or(&settings.ai_endpoint).trim().trim_end_matches('/').to_owned();
+    let model = req.model.as_deref().unwrap_or(&settings.ai_model).trim().to_owned();
+    let saved_address = endpoint == settings.ai_endpoint.trim().trim_end_matches('/');
+    let key = match req.api_key.as_deref() {
+        Some(key) => key.trim().to_owned(),
+        None if saved_address => settings.ai_api_key.clone(),
+        None => String::new(),
+    };
+    let fail = |message: &str| TestResult { ok: false, message: message.into(), refused: false, ms: 0 };
+    if !(endpoint.starts_with("https://") || endpoint.starts_with("http://")) {
+        return fail("Enter the AI service's address first, such as https://api.openai.com/v1.");
+    }
+    if model.is_empty() {
+        return fail("Enter the model to ask first.");
+    }
+    let started = Instant::now();
+    let outcome = tokio::time::timeout(TEST_TIMEOUT * 2, crate::mixes::Ai::new(&endpoint, &model, &key).check()).await;
+    let ms = started.elapsed().as_millis() as u64;
+    let (ok, refused, message) = match outcome {
+        Ok(Ok(())) => (true, false, format!("{model} answered.")),
+        Ok(Err(err)) => {
+            let message = format!("{err:#}");
+            (false, message.contains("refused the key"), format!("{}.", capitalized(&message)))
+        }
+        Err(_) => {
+            (false, false, format!("The AI service didn't answer within {} seconds.", TEST_TIMEOUT.as_secs() * 2))
+        }
+    };
+    TestResult { ok, message, refused, ms }
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
 /// "The transcoder" in the middle of a sentence.

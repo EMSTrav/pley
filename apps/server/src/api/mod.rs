@@ -14,6 +14,7 @@ mod import;
 pub(crate) mod items;
 mod libraries;
 pub(crate) mod livetv;
+mod mixes;
 mod oauth;
 pub(crate) mod people;
 pub(crate) mod playback;
@@ -116,6 +117,7 @@ pub fn router(state: AppState) -> Router {
         .route("/collection-categories/{id}", patch(categories::rename).delete(categories::delete))
         .route("/home/rows", get(collections::home_rows))
         .route("/home/rows/order", put(collections::order_home))
+        .route("/mixes", get(mixes::info).post(mixes::create))
         .route("/playlists", get(playlists::list).post(playlists::create))
         .route("/playlists/{id}", get(playlists::get).patch(playlists::rename).delete(playlists::delete))
         .route("/playlists/{id}/items", post(playlists::add))

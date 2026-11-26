@@ -571,6 +571,31 @@
       }
     }
   },
+  "makeMix": {
+    "open": "Crear una mezcla",
+    "title": "Crear una mezcla",
+    "describe": "Elige hasta cinco artistas. Pley mezcla sus canciones con las de los artistas que más se les parecen y guarda la mezcla en tus listas.",
+    "describeAi": "Elige hasta cinco artistas. Un servicio de IA elige y ordena canciones suyas y de los artistas que más se les parecen, solo de tu biblioteca, y la mezcla va a tus listas.",
+    "pick_one": "Elige un artista",
+    "pick_many": "Elige hasta {{count}} artistas",
+    "pick_other": "Elige hasta {{count}} artistas",
+    "remove": "Quitar a {{artist}}",
+    "search": "Buscar un artista",
+    "artists": "Artistas",
+    "noArtists": "Ningún artista con ese nombre.",
+    "prompt": "¿Para qué es?",
+    "promptHint": "Opcional. Solo se envían al servicio de IA estas palabras y los títulos, álbumes y artistas de las canciones.",
+    "promptExample": "Un viaje largo de noche",
+    "length": "Duración",
+    "tracks_one": "{{count, number}} canción",
+    "tracks_many": "{{count, number}} canciones",
+    "tracks_other": "{{count, number}} canciones",
+    "make": "Crear la mezcla",
+    "making": "Creando la mezcla…",
+    "made_one": "{{title}}: {{count, number}} canción",
+    "made_many": "{{title}}: {{count, number}} canciones",
+    "made_other": "{{title}}: {{count, number}} canciones"
+  },
   "search": {
     "documentTitle": "Buscar",
     "documentTitleQuery": "Buscar: {{q}}",

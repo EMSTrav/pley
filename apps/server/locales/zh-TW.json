@@ -56,5 +56,8 @@
       "qualityProfile": "在 設定 → 請求 中選擇 {{service}} 的品質設定",
       "rootFolder": "在 設定 → 請求 中選擇 {{service}} 的根資料夾"
     }
+  },
+  "mixes": {
+    "title": "{{artists}} 混合歌單"
   }
 }

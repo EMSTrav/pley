@@ -2323,6 +2323,31 @@ owner may see them. Their entries are keyed by item and can't be added,
 removed or reordered (`400`). No playlist holds an audiobook's parts, so
 one of an audiobook library is refused (`400`).
 
+### Mixes
+
+A mix is a music playlist made from a few artists the user picks: their
+tracks and those of the artists most like them (sharing the most genres),
+from the music libraries the user may open. It's kept as one of their
+playlists, to play, rename or delete as any other.
+
+When an administrator has set up an AI service (`ai_mixes`, and
+`ai_endpoint`, `ai_model` and `ai_api_key` in [Settings](#settings)), the
+mix asks it, through the OpenAI chat completions API
+(`POST {ai_endpoint}/chat/completions`), to choose and order tracks from a
+list and name the mix in the user's language. The list holds up to 40
+tracks of each artist picked and 12 of each of up to 15 artists like them:
+their ids, titles, albums, artists and years. The request's `prompt` goes
+with it; nothing else does. Only tracks of the list are kept, each once.
+Without a service, or when it fails or answers with too few tracks, Pley
+makes the mix: about two in three tracks by the artists picked, in turn,
+the rest by the others, an artist twice in a row only when no one else is
+left, named "*Artists* Mix" in the user's language.
+
+| Method | Path | Who | What |
+|---|---|---|---|
+| GET | `/api/mixes` | `library` | `{ ai: boolean, max_artists: 5, max_length: 100 }`: whether an AI service makes mixes |
+| POST | `/api/mixes` | `playlists` | `{ artist_ids: Id[], length?: number, prompt?: string }` → `201` `{ playlist_id, title, item_count, by_ai }`. 1 to 5 artists, 1 to 100 tracks (default 50), a `prompt` of at most 200 characters (what the mix is for: "a long drive"), else `400`; an artist the user can't see: `404`; no tracks: `400` |
+
 ## Playback
 
 | Method | Path | Who | What |
@@ -4976,7 +5001,8 @@ on another administrator's account, but for the `GET`s
   stays.
 - **`settings/test`** makes one request to `service` (`"tmdb"`, `"tvdb"`,
   `"tvmaze"`, `"musicbrainz"`, `"audiobooks"` (Open Library and Audnexus),
-  `"transcoder"` or `"opensubtitles"`) with the
+  `"ai"` (the [AI service](#mixes), with the `endpoint` and `model` given,
+  else the saved ones), `"transcoder"` or `"opensubtitles"`) with the
   key and PIN given (not saved), else the saved ones. OpenSubtitles: its
   key, or with a `username`, a sign-in of that account (`password` left
   out: the saved one, for the saved username). `message` says what
@@ -5059,6 +5085,10 @@ interface Settings {
   tvdb_api_key: string;             // TheTVDB v4 key; "" = not set
   tvdb_pin: string;                 // TheTVDB subscriber PIN, for user-supported keys
   music_metadata: boolean;          // MusicBrainz + Cover Art Archive for music libraries (default true)
+  ai_mixes: boolean;                // mixes ask the AI service (default false; needs ai_endpoint and ai_model)
+  ai_endpoint: string;              // an OpenAI-compatible API's base: https://api.openai.com/v1, http://localhost:11434/v1 (Ollama)
+  ai_model: string;                 // as the service names it: gpt-4o-mini
+  ai_api_key: string;               // empty for a service without one; the saved key goes only to the saved endpoint
   book_metadata: boolean;           // Open Library and Audnexus for audiobook libraries (default true)
   read_nfo: boolean;                // read NFO files next to movies, shows, seasons and episodes (default
                                     // true; see CONFIGURATION.md). A change scans every library

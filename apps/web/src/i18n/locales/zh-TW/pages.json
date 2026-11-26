@@ -547,6 +547,25 @@
       }
     }
   },
+  "makeMix": {
+    "open": "產生混合歌單",
+    "title": "產生混合歌單",
+    "describe": "最多選擇五位藝人。Pley 會把他們的歌曲與風格最接近的藝人的歌曲混在一起，並儲存到你的播放清單。",
+    "describeAi": "最多選擇五位藝人。AI 服務僅從你的媒體庫中挑選並排列他們及風格最接近的藝人的歌曲，混合歌單會儲存到你的播放清單。",
+    "pick_other": "最多選擇 {{count}} 位藝人",
+    "remove": "移除 {{artist}}",
+    "search": "尋找藝人",
+    "artists": "藝人",
+    "noArtists": "沒有這個名字的藝人。",
+    "prompt": "用在什麼場合？",
+    "promptHint": "選填。只有這些文字以及歌曲的標題、專輯和藝人會傳送給 AI 服務。",
+    "promptExample": "深夜長途開車",
+    "length": "長度",
+    "tracks_other": "{{count, number}} 首歌曲",
+    "make": "產生",
+    "making": "正在產生…",
+    "made_other": "{{title}}：{{count, number}} 首歌曲"
+  },
   "search": {
     "documentTitle": "搜尋",
     "documentTitleQuery": "搜尋：{{q}}",

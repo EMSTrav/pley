@@ -131,6 +131,24 @@ Music data from MusicBrainz is public domain (CC0); covers from the Cover Art
 Archive belong to their owners. Open Library's data is public domain (CC0);
 audiobook data and covers from Audnexus belong to their owners.
 
+## AI mixes
+
+A mix is a music playlist made from up to five artists: *Make a mix* on a
+music library. Pley picks their songs and those of the artists most like
+them (the genres they share) from the libraries of whoever makes it, and
+orders them itself. In Settings → Server → AI mixes, an administrator can
+have an AI service choose, order and name them instead: any service with
+OpenAI's chat API, such as OpenAI or OpenRouter, or one on your own
+network such as Ollama (`http://localhost:11434/v1`) or LM Studio, with
+the model to ask and its key (none for a local service without one).
+
+The service is sent the titles, albums, artists and years of the songs it
+may choose from, the words the mix is asked for with ("a long drive") and
+the language to name it in: never files, addresses or accounts. It can
+only choose songs from that list. Each mix is one request, which a paid
+service may charge for. When it doesn't answer or its answer can't be
+used, Pley makes the mix itself.
+
 ## NFO files
 
 Kodi, Jellyfin, Emby, Radarr, Sonarr, tinyMediaManager and MediaElch keep a

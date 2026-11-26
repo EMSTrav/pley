@@ -56,5 +56,8 @@
       "qualityProfile": "choisissez le profil de qualité de {{service}} dans Paramètres → Demandes",
       "rootFolder": "choisissez le dossier racine de {{service}} dans Paramètres → Demandes"
     }
+  },
+  "mixes": {
+    "title": "Mix {{artists}}"
   }
 }

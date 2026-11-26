@@ -48,6 +48,7 @@ pub mod logging;
 pub mod markers;
 pub mod mdns;
 pub mod metadata;
+pub mod mixes;
 pub mod nearby;
 pub mod network;
 pub mod oauth;

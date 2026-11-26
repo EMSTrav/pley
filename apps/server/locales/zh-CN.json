@@ -56,5 +56,8 @@
       "qualityProfile": "在 设置 → 请求 中选择 {{service}} 的质量配置",
       "rootFolder": "在 设置 → 请求 中选择 {{service}} 的根文件夹"
     }
+  },
+  "mixes": {
+    "title": "{{artists}} 混合歌单"
   }
 }

@@ -571,6 +571,31 @@
       }
     }
   },
+  "makeMix": {
+    "open": "Créer un mix",
+    "title": "Créer un mix",
+    "describe": "Choisissez jusqu’à cinq artistes. Pley mélange leurs morceaux avec ceux des artistes qui leur ressemblent le plus, et garde le mix dans vos playlists.",
+    "describeAi": "Choisissez jusqu’à cinq artistes. Un service d’IA choisit et ordonne des morceaux de ces artistes et de ceux qui leur ressemblent le plus, dans votre bibliothèque seulement, et le mix rejoint vos playlists.",
+    "pick_one": "Choisissez un artiste",
+    "pick_many": "Choisissez jusqu’à {{count}} artistes",
+    "pick_other": "Choisissez jusqu’à {{count}} artistes",
+    "remove": "Retirer {{artist}}",
+    "search": "Chercher un artiste",
+    "artists": "Artistes",
+    "noArtists": "Aucun artiste de ce nom.",
+    "prompt": "C’est pour quoi ?",
+    "promptHint": "Facultatif. Seuls ces mots et les titres, albums et artistes des morceaux sont envoyés au service d’IA.",
+    "promptExample": "Un long trajet de nuit",
+    "length": "Durée",
+    "tracks_one": "{{count, number}} morceau",
+    "tracks_many": "{{count, number}} de morceaux",
+    "tracks_other": "{{count, number}} morceaux",
+    "make": "Créer le mix",
+    "making": "Création du mix…",
+    "made_one": "{{title}} : {{count, number}} morceau",
+    "made_many": "{{title}} : {{count, number}} de morceaux",
+    "made_other": "{{title}} : {{count, number}} morceaux"
+  },
   "search": {
     "documentTitle": "Recherche",
     "documentTitleQuery": "Recherche : {{q}}",

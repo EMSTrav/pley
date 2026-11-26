@@ -1062,6 +1062,15 @@ export interface Settings {
   /** Audiobooks from Open Library, and Audnexus for those with an ASIN. Absent from servers before it. */
   book_metadata?: boolean;
   /**
+   * Mixes ask an OpenAI-compatible AI service at `ai_endpoint` (its base,
+   * such as `https://api.openai.com/v1`) for `ai_model`, with `ai_api_key`
+   * (empty for a local one without). Absent from servers before it.
+   */
+  ai_mixes?: boolean;
+  ai_endpoint?: string;
+  ai_model?: string;
+  ai_api_key?: string;
+  /**
    * Ids and details from the NFO files next to movies, shows, seasons and
    * episodes, over the online source's. Absent from servers before it.
    */
@@ -1173,7 +1182,7 @@ export interface Settings {
 export type MinimumAvailability = "announced" | "in_cinemas" | "released";
 
 /** A service the settings can test (`POST /api/settings/test`). */
-export type TestedService = "tmdb" | "tvdb" | "tvmaze" | "musicbrainz" | "audiobooks" | "transcoder" | "opensubtitles";
+export type TestedService = "tmdb" | "tvdb" | "tvmaze" | "musicbrainz" | "ai" | "audiobooks" | "transcoder" | "opensubtitles";
 
 export interface ServiceTest {
   service: TestedService;
@@ -1183,6 +1192,9 @@ export interface ServiceTest {
   /** An OpenSubtitles account typed in; the saved password when left out. */
   username?: string;
   password?: string;
+  /** The AI service's address and model typed in (`ai`). */
+  endpoint?: string;
+  model?: string;
 }
 
 export interface ServiceTestResult {

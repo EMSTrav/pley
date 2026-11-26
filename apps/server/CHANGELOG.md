@@ -9,6 +9,15 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Mixes: Make a mix on a music library picks up to five artists, and Pley
+  makes a playlist of their songs and those of the artists most like them.
+  An AI service can choose, order and name the songs instead, from your
+  library alone: any with OpenAI's chat API, OpenAI, OpenRouter or a local
+  Ollama included, set up in Settings → Server → AI mixes. It's off by
+  default.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added

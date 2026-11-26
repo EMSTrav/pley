@@ -537,3 +537,34 @@ export function reordered<T, K = Id>(list: T[], ids: K[], idOf: (t: T) => K): T[
   const listed = new Set(ids);
   return [...first, ...list.filter((t) => !listed.has(idOf(t)))];
 }
+
+// ---------------------------------------------------------------------------
+// Mixes
+
+/** What making a mix offers (`GET /api/mixes`). */
+export interface MixInfo {
+  /** Whether an AI service chooses the tracks, reading what the mix is for. */
+  ai: boolean;
+  max_artists: number;
+  max_length: number;
+}
+
+/** A mix made and kept as a playlist. */
+export interface MadeMix {
+  playlist_id: Id;
+  title: string;
+  item_count: number;
+  by_ai: boolean;
+}
+
+export function useMixInfo(enabled = true) {
+  return useQuery({ queryKey: ["mixes"], queryFn: () => api.get<MixInfo>("/api/mixes"), enabled, staleTime: 60_000 });
+}
+
+export function useMakeMix() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { artist_ids: Id[]; length: number; prompt?: string }) => api.post<MadeMix>("/api/mixes", body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: listKeys.playlists, exact: true }),
+  });
+}

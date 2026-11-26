@@ -56,5 +56,8 @@
       "qualityProfile": "choose {{service}}'s quality profile in Settings → Requests",
       "rootFolder": "choose {{service}}'s root folder in Settings → Requests"
     }
+  },
+  "mixes": {
+    "title": "{{artists}} Mix"
   }
 }

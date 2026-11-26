@@ -67,6 +67,20 @@
       "languageHint": "Pour TMDB et TheTVDB. TVmaze est en anglais.",
       "attribution": "Ce produit utilise l’API TMDB mais n’est ni approuvé ni certifié par TMDB. Métadonnées TV de <tvdb>TheTVDB</tvdb>. Les données TV de TVmaze sont sous licence <license>CC BY-SA</license> ; les données musicales de MusicBrainz et celles des livres audio d’Open Library sont dans le domaine public ; les données et couvertures de livres audio d’Audnexus appartiennent à leurs ayants droit."
     },
+    "ai": {
+      "title": "Mix par IA",
+      "description": "Les mix peuvent demander à un service d’IA de choisir et d’ordonner leurs morceaux, et de les nommer. Il reçoit les titres des morceaux, des albums et des artistes des bibliothèques de qui crée un mix, jamais de fichiers ni de comptes. Désactivé, Pley crée les mix lui-même.",
+      "mixes": "Mix par IA",
+      "mixesHint": "Nécessite l’adresse du service et un modèle ci-dessous.",
+      "mixesToggle": "Demander les mix à un service d’IA",
+      "endpoint": "Adresse",
+      "endpointHint": "Tout service doté de l’API de chat d’OpenAI : OpenAI, OpenRouter, ou Ollama ou LM Studio sur votre propre réseau (http://localhost:11434/v1).",
+      "model": "Modèle",
+      "modelHint": "Tel que le service le nomme, par exemple gpt-4o-mini ou llama3.1.",
+      "key": "Clé d’API",
+      "keyHint": "Laissez-la vide pour un service local qui n’en a pas. Chaque mix est une requête que le service peut facturer.",
+      "test": "Tester le service d’IA"
+    },
     "subtitles": {
       "title": "Sous-titres",
       "description": "Trouvez des sous-titres pour un film ou un épisode sur OpenSubtitles, depuis le menu des sous-titres du lecteur.",

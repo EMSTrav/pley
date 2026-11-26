@@ -106,6 +106,49 @@ describe("ServerSettings", () => {
     expect(screen.getByRole("switch", { name: "Read NFO files" })).not.toBeChecked();
   });
 
+  it("sets up an AI service for mixes, turned on once it has an address and a model", async () => {
+    const user = userEvent.setup();
+    const ai = { ai_mixes: false, ai_endpoint: "", ai_model: "", ai_api_key: "" };
+    const requests = mockApi({
+      "GET /api/settings": () => ({ ...SETTINGS, ...ai }),
+      "GET /api/system": () => ({}),
+      "POST /api/settings/test": (): ServiceTestResult => ({ ok: true, message: "llama3.1 answered.", refused: false, ms: 900 }),
+      "PUT /api/settings": (req) => ({ ...SETTINGS, ...ai, ...(req.body as Partial<Settings>) }),
+    });
+    renderWithProviders(<ServerSettings />);
+    const toggle = await screen.findByRole("switch", { name: "Ask an AI service for mixes" });
+    expect(toggle).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Address"), "http://localhost:11434/v1");
+    await user.type(screen.getByLabelText("Model"), "llama3.1");
+    expect(toggle).toBeEnabled();
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Test the AI service" }));
+    expect(await screen.findByText("llama3.1 answered.")).toBeInTheDocument();
+    expect(requests.find((r) => r.method === "POST")?.body).toEqual({
+      service: "ai",
+      endpoint: "http://localhost:11434/v1",
+      model: "llama3.1",
+      api_key: "",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(requests.find((r) => r.method === "PUT")?.body).toEqual({
+        ai_mixes: true,
+        ai_endpoint: "http://localhost:11434/v1",
+        ai_model: "llama3.1",
+      }),
+    );
+  });
+
+  it("has no AI mixes on a server before them", async () => {
+    mockApi({ "GET /api/settings": () => SETTINGS, "GET /api/system": () => ({}) });
+    renderWithProviders(<ServerSettings />);
+    expect(await screen.findByLabelText("Server name")).toHaveValue("Den");
+    expect(screen.queryByText("AI mixes")).not.toBeInTheDocument();
+  });
+
   it("has no NFO switch for a server that doesn't read NFO files", async () => {
     mockApi({ "GET /api/settings": () => SETTINGS, "GET /api/system": () => ({}) });
     renderWithProviders(<ServerSettings />);

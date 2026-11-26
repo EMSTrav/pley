@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, FolderSearch, RefreshCw, Rows3, Sparkles } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, AudioLines, FolderSearch, RefreshCw, Rows3, Sparkles } from "lucide-react";
 import { errorMessage } from "@/api/client";
 import { useLibrary, useLibraryFilters, useLibraryHubs, useLibraryItems, useScanLibrary } from "@/api/hooks";
 import type { LibraryKind, LibrarySort, SortOrder } from "@/api/types";
@@ -13,6 +13,7 @@ import { LibraryIcon } from "@/components/Sidebar";
 import { useToast } from "@/components/Toast";
 import { Button, EmptyState, IconButton, Select } from "@/components/ui";
 import { NotFoundPage } from "./NotFoundPage";
+import { MakeMixModal } from "./MakeMixModal";
 import { SaveFiltersModal } from "./SaveFiltersModal";
 import { CollectionsTab } from "./collections/CollectionsTab";
 import { RecommendedRowsModal } from "./collections/RowsModal";
@@ -43,6 +44,7 @@ export function LibraryPage() {
   const user = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = tabOf(params);
+  const [mixing, setMixing] = useState(false);
   useDocumentTitle(lib.data?.name);
 
   // Opened without a tab, sort or filters in its address (from the sidebar),
@@ -87,25 +89,33 @@ export function LibraryPage() {
             <h1 className="truncate text-2xl font-bold tracking-tight">{lib.data?.name ?? " "}</h1>
           </div>
         </div>
-        <div className="flex rounded-lg bg-surface-2 p-1" role="tablist">
-          {(kind === "music" || kind === "audiobooks"
-            ? (["recommended", "library"] as const)
-            : (["recommended", "library", "collections"] as const)
-          ).map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="tab"
-              aria-selected={tab === name}
-              onClick={() => setParam({ tab: name === "library" ? null : name })}
-              className={cn(
-                "rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors",
-                tab === name ? "bg-surface-3 text-fg shadow" : "text-muted hover:text-fg",
-              )}
-            >
-              {t(`library.tabs.${name}`)}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          {kind === "music" ? (
+            <Button size="sm" icon={<AudioLines className="size-4" />} onClick={() => setMixing(true)}>
+              {t("makeMix.open")}
+            </Button>
+          ) : null}
+          {mixing ? <MakeMixModal libraryId={libId} onClose={() => setMixing(false)} /> : null}
+          <div className="flex rounded-lg bg-surface-2 p-1" role="tablist">
+            {(kind === "music" || kind === "audiobooks"
+              ? (["recommended", "library"] as const)
+              : (["recommended", "library", "collections"] as const)
+            ).map((name) => (
+              <button
+                key={name}
+                type="button"
+                role="tab"
+                aria-selected={tab === name}
+                onClick={() => setParam({ tab: name === "library" ? null : name })}
+                className={cn(
+                  "rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors",
+                  tab === name ? "bg-surface-3 text-fg shadow" : "text-muted hover:text-fg",
+                )}
+              >
+                {t(`library.tabs.${name}`)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

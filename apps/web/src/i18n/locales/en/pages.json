@@ -559,6 +559,28 @@
       }
     }
   },
+  "makeMix": {
+    "open": "Make a mix",
+    "title": "Make a mix",
+    "describe": "Pick up to five artists. Pley mixes their songs with those of the artists most like them, and keeps the mix in your playlists.",
+    "describeAi": "Pick up to five artists. An AI service picks and orders songs by them and the artists most like them, from your library alone, and the mix goes in your playlists.",
+    "pick_one": "Pick an artist",
+    "pick_other": "Pick up to {{count}} artists",
+    "remove": "Remove {{artist}}",
+    "search": "Find an artist",
+    "artists": "Artists",
+    "noArtists": "No artist by that name.",
+    "prompt": "What's it for?",
+    "promptHint": "Optional. Only these words and the songs' names, albums and artists are sent to the AI service.",
+    "promptExample": "A long drive at night",
+    "length": "Length",
+    "tracks_one": "{{count, number}} song",
+    "tracks_other": "{{count, number}} songs",
+    "make": "Make the mix",
+    "making": "Making the mix…",
+    "made_one": "{{title}}: {{count, number}} song",
+    "made_other": "{{title}}: {{count, number}} songs"
+  },
   "search": {
     "documentTitle": "Search",
     "documentTitleQuery": "Search: {{q}}",
