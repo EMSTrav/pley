@@ -2092,3 +2092,38 @@ async fn a_show_of_two_shows_splits_with_what_was_watched() {
             .unwrap();
     assert_eq!(seasons, [(show, Some(1)), (other, Some(1)), (other, Some(2)), (other, Some(3))]);
 }
+
+#[tokio::test]
+async fn a_music_library_lists_its_artists_or_its_albums() {
+    let app = TestApp::new().await;
+    let admin = app.setup_admin().await;
+    app.media_file("music/Band/Record (2001)/01 - Song.mp3", 512);
+    app.media_file("music/Band/Later (2010)/01 - Tune.mp3", 512);
+    app.media_file("music/Another/First (1999)/01 - Air.mp3", 512);
+    app.media_file("films/Film (2000)/Film (2000).mkv", 512);
+    let music = app.library(&admin, "Music", "music", "music").await;
+    let films = app.library(&admin, "Films", "movies", "films").await;
+
+    let artists = app.get(&format!("/api/libraries/{music}/items"), &admin).await;
+    assert_eq!(titles(&artists.body["items"]), ["Another", "Band"]);
+    let same = app.get(&format!("/api/libraries/{music}/items?kind=artist"), &admin).await;
+    assert_eq!(titles(&same.body["items"]), ["Another", "Band"]);
+
+    let albums = app.get(&format!("/api/libraries/{music}/items?kind=album"), &admin).await;
+    assert_eq!(albums.status, StatusCode::OK, "{:?}", albums.body);
+    assert_eq!(titles(&albums.body["items"]), ["First", "Later", "Record"]);
+    assert_eq!(albums.body["total"], 3);
+    let by_artist: Vec<_> =
+        albums.body["items"].as_array().unwrap().iter().map(|a| a["parent_title"].clone()).collect();
+    assert_eq!(by_artist, [json!("Another"), json!("Band"), json!("Band")], "each album says whose it is");
+    let newest = app.get(&format!("/api/libraries/{music}/items?kind=album&sort=year&order=desc"), &admin).await;
+    assert_eq!(titles(&newest.body["items"]), ["Later", "Record", "First"]);
+    let filters = app.get(&format!("/api/libraries/{music}/filters?kind=album"), &admin).await;
+    assert_eq!(filters.status, StatusCode::OK);
+
+    // Albums are a music library's alone, and nothing else is listed.
+    for (library, kind) in [(films, "album"), (music, "track"), (music, "episode"), (films, "artist")] {
+        let refused = app.get(&format!("/api/libraries/{library}/items?kind={kind}"), &admin).await;
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{library} {kind}");
+    }
+}

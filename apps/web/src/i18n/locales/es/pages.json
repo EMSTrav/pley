@@ -437,6 +437,11 @@
       "library": "biblioteca",
       "collections": "colecciones"
     },
+    "show": {
+      "label": "Mostrar",
+      "artists": "Artistas",
+      "albums": "Álbumes"
+    },
     "sorts": {
       "title": "Título",
       "year": "Año",
@@ -460,7 +465,10 @@
       "music_other": "{{count, number}} artistas",
       "audiobooks_one": "{{count, number}} libro",
       "audiobooks_many": "{{count, number}} libros",
-      "audiobooks_other": "{{count, number}} libros"
+      "audiobooks_other": "{{count, number}} libros",
+      "albums_one": "{{count, number}} álbum",
+      "albums_many": "{{count, number}} álbumes",
+      "albums_other": "{{count, number}} álbumes"
     },
     "countOf": {
       "movies_one": "{{shown, number}} de {{count, number}} película",
@@ -474,7 +482,10 @@
       "music_other": "{{shown, number}} de {{count, number}} artistas",
       "audiobooks_one": "{{shown, number}} de {{count, number}} libro",
       "audiobooks_many": "{{shown, number}} de {{count, number}} libros",
-      "audiobooks_other": "{{shown, number}} de {{count, number}} libros"
+      "audiobooks_other": "{{shown, number}} de {{count, number}} libros",
+      "albums_one": "{{shown, number}} de {{count, number}} álbum",
+      "albums_many": "{{shown, number}} de {{count, number}} álbumes",
+      "albums_other": "{{shown, number}} de {{count, number}} álbumes"
     },
     "all": {
       "movies": "Todas las películas",

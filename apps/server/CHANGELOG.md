@@ -9,6 +9,11 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- A music library's Library tab lists its albums as well as its artists:
+  Artists or Albums, beside the sort.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added

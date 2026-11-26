@@ -433,6 +433,11 @@
       "library": "媒體庫",
       "collections": "合集"
     },
+    "show": {
+      "label": "顯示",
+      "artists": "藝人",
+      "albums": "專輯"
+    },
     "sorts": {
       "title": "標題",
       "year": "年份",
@@ -448,13 +453,15 @@
       "movies_other": "{{count, number}} 部電影",
       "shows_other": "{{count, number}} 部影集",
       "music_other": "{{count, number}} 位藝人",
-      "audiobooks_other": "{{count, number}} 本書"
+      "audiobooks_other": "{{count, number}} 本書",
+      "albums_other": "{{count, number}} 張專輯"
     },
     "countOf": {
       "movies_other": "{{count, number}} 部電影中的 {{shown, number}} 部",
       "shows_other": "{{count, number}} 部影集中的 {{shown, number}} 部",
       "music_other": "{{count, number}} 位藝人中的 {{shown, number}} 位",
-      "audiobooks_other": "{{count, number}} 本書中的 {{shown, number}} 本"
+      "audiobooks_other": "{{count, number}} 本書中的 {{shown, number}} 本",
+      "albums_other": "{{count, number}} 張專輯中的 {{shown, number}} 張"
     },
     "all": {
       "movies": "所有電影",

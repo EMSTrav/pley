@@ -1747,6 +1747,7 @@ who may see it. The compatibility APIs list none
 
 | Parameter | Values |
 |---|---|
+| `kind` | the library's top-level kind (default), or `album` in a music library: its albums rather than its artists, each with the artist as `parent_title`; another value: `400`. `GET /api/libraries/{id}/filters` takes it too |
 | `sort` | `title` (default), `year`, `added`, `rating`, `user_rating`, `release`, `duration`, `last_played`, `bitrate`; another value: `400` |
 | `order` | `asc`, `desc`. Default: `desc` for `added`, `rating`, `user_rating`, `release`, `last_played` and `bitrate`, else `asc` |
 | `watched` | `true`, `false`; `true` matches shows whose every episode is watched |

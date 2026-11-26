@@ -30,6 +30,10 @@ const SORTS_BY_KIND: Record<LibraryKind, LibrarySort[]> = {
   music: ["title", "added", "user_rating", "last_played"],
   audiobooks: ["title", "year", "added", "user_rating", "duration", "last_played"],
 };
+const ALBUM_SORTS: LibrarySort[] = ["title", "year", "added", "user_rating", "last_played"];
+
+/** What a music library's Library tab lists: its artists, or all its albums. */
+type MusicShows = "artists" | "albums";
 
 function defaultOrder(sort: LibrarySort): SortOrder {
   return sort === "title" ? "asc" : "desc";
@@ -204,7 +208,11 @@ function LibraryTab({
   const toast = useToast();
   const scan = useScanLibrary();
   const [saving, setSaving] = useState(false);
-  const sorts = SORTS_BY_KIND[kind];
+  const shows: MusicShows | undefined = kind === "music" ? (params.get("show") === "albums" ? "albums" : "artists") : undefined;
+  const albums = shows === "albums";
+  const sorts = albums ? ALBUM_SORTS : SORTS_BY_KIND[kind];
+  // What the count and empty grid name: the library's kind, or albums.
+  const counted = albums ? "albums" : kind;
   const rawSort = params.get("sort") as LibrarySort | null;
   const sort: LibrarySort = rawSort && sorts.includes(rawSort) ? rawSort : "title";
   const order: SortOrder = params.get("order") === "asc" || params.get("order") === "desc" ? (params.get("order") as SortOrder) : defaultOrder(sort);
@@ -217,8 +225,8 @@ function LibraryTab({
   const dynamicRange = kind === "music" ? undefined : rangeFilterOf(params.get("dynamic_range"));
 
   const query = useMemo(
-    () => ({ sort, order, watched, genre, year, resolution, dynamic_range: dynamicRange }),
-    [sort, order, watched, genre, year, resolution, dynamicRange],
+    () => ({ kind: albums ? ("album" as const) : undefined, sort, order, watched, genre, year, resolution, dynamic_range: dynamicRange }),
+    [albums, sort, order, watched, genre, year, resolution, dynamicRange],
   );
   const items = useLibraryItems(libraryId, query, ready);
   const filters = useLibraryFilters(libraryId, ready && kind !== "music");
@@ -235,6 +243,26 @@ function LibraryTab({
     <>
       <div className="sticky top-16 z-10 mt-3 border-b border-white/[0.04] bg-bg/85 px-4 py-2.5 backdrop-blur-md sm:px-8">
         <div className="scrollbar-none -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0 [&>*]:shrink-0">
+          {shows ? (
+            <div className="flex rounded-lg bg-surface-2 p-0.5" role="radiogroup" aria-label={t("library.show.label")}>
+              {(["artists", "albums"] as const).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  role="radio"
+                  aria-checked={shows === name}
+                  // A sort the other list lacks would fall back to title anyway.
+                  onClick={() => setParam({ show: name === "artists" ? null : name, sort: null, order: null })}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                    shows === name ? "bg-surface-3 text-fg shadow" : "text-muted hover:text-fg",
+                  )}
+                >
+                  {t(`library.show.${name}`)}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <Select
             aria-label={t("library.sortBy")}
             value={sort}
@@ -342,8 +370,8 @@ function LibraryTab({
             <span className="hidden text-sm tabular-nums text-muted sm:inline">
               {items.data
                 ? filtered && libraryTotal != null && libraryTotal >= items.data.total
-                  ? t(`library.countOf.${kind}`, { shown: items.data.total, count: libraryTotal })
-                  : t(`library.count.${kind}`, { count: items.data.total })
+                  ? t(`library.countOf.${counted}`, { shown: items.data.total, count: libraryTotal })
+                  : t(`library.count.${counted}`, { count: items.data.total })
                 : ""}
             </span>
             <input

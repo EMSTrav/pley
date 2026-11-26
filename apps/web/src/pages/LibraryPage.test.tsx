@@ -139,4 +139,50 @@ describe("LibraryPage", () => {
     expect(await screen.findByText("342 movies")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("?sort=year");
   });
+
+  it("lists a music library's artists or its albums, and remembers which", async () => {
+    const MUSIC: Library = { ...MOVIES, id: 5, name: "Music", kind: "music", item_count: 2 };
+    const musicKey = viewStorageKey(testUser.id, MUSIC.id);
+    const requests = mockApi({
+      "GET /api/libraries": () => [MUSIC],
+      "GET /api/libraries/5/items": (req) =>
+        req.path.includes("kind=album")
+          ? {
+              total: 3,
+              items: [
+                makeItem({ id: 21, kind: "album", title: "First", parent_title: "Another", year: 1999 }),
+                makeItem({ id: 22, kind: "album", title: "Later", parent_title: "Band", year: 2010 }),
+                makeItem({ id: 23, kind: "album", title: "Record", parent_title: "Band", year: 2001 }),
+              ],
+            }
+          : { total: 2, items: [makeItem({ id: 11, kind: "artist", title: "Another" }), makeItem({ id: 12, kind: "artist", title: "Band" })] },
+      "GET /api/libraries/5/hubs": () => ({ hubs: [] }),
+    });
+    const listings = () => requests.filter((r) => r.path.startsWith("/api/libraries/5/items"));
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/library/:id" element={<LibraryPage />} />
+        </Routes>
+        <LocationDisplay />
+      </>,
+      { route: libraryUrl(MUSIC.id) },
+    );
+    expect(await screen.findByText("2 artists")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Artists" })).toBeChecked();
+    expect(listings().at(-1)?.path).not.toContain("kind=");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort by" }), "added");
+    await user.click(screen.getByRole("radio", { name: "Albums" }));
+    expect(await screen.findByText("3 albums")).toBeInTheDocument();
+    expect(listings().at(-1)?.path).toContain("kind=album");
+    expect(leftView(musicKey)).toBe("show=albums");
+    const sorts = Array.from(screen.getByRole("combobox", { name: "Sort by" }).querySelectorAll("option")).map((o) => o.value);
+    expect(sorts).toEqual(["title", "year", "added", "user_rating", "last_played"]);
+
+    await user.click(screen.getByRole("radio", { name: "Artists" }));
+    expect(await screen.findByText("2 artists")).toBeInTheDocument();
+    expect(leftView(musicKey)).toBe("");
+  });
 });

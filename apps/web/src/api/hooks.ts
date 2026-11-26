@@ -447,6 +447,7 @@ function libraryItemsQuery(id: Id, q: LibraryItemsQuery, enabled: boolean) {
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       api.get<LibraryItemsResponse>(
         `/api/libraries/${id}/items${qs({
+          kind: q.kind,
           sort: q.sort,
           order: q.order,
           watched: q.watched,

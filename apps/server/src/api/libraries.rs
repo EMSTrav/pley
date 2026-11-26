@@ -517,7 +517,7 @@ pub async fn items(
     let dynamic_ranges = named("dynamic_range", catalog::dynamic_ranges_named)?;
     let q = LibraryQuery {
         library_id: lib.id,
-        kind: lib.kind().top_level_kind(),
+        kind: listed_kind(&lib, &query)?,
         sort,
         descending,
         genre: query.get("genre").map(String::as_str).filter(|g| !g.is_empty()),
@@ -543,13 +543,26 @@ pub async fn items(
     Ok((cache, Json(ItemsPage { total, items })).into_response())
 }
 
+/// The kind of item a listing of `lib` holds: its titles, or, in a music
+/// library asked for `kind=album`, its albums. Any other kind is refused.
+fn listed_kind(lib: &LibraryRow, query: &HashMap<String, String>) -> ApiResult<&'static str> {
+    let top = lib.kind().top_level_kind();
+    match query.get("kind").map(|k| k.trim()).filter(|k| !k.is_empty()) {
+        None => Ok(top),
+        Some(k) if k == top => Ok(top),
+        Some("album") if lib.kind() == LibraryKind::Music => Ok("album"),
+        Some(k) => Err(AppError::bad_request(format!("a {top} library doesn't list '{k}'"))),
+    }
+}
+
 pub async fn filters(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let lib = visible_library(&state, &user, id).await?;
-    let kind = lib.kind().top_level_kind();
+    let kind = listed_kind(&lib, &query)?;
     let ((genres, years), media) = tokio::try_join!(
         catalog::library_filters(&state.db, user.id, lib.id, kind),
         catalog::media_filters(&state.db, user.id, lib.id, kind),

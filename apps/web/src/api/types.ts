@@ -1452,6 +1452,8 @@ export type LibrarySort =
 export type SortOrder = "asc" | "desc";
 
 export interface LibraryItemsQuery {
+  /** `album`: a music library's albums rather than its artists. */
+  kind?: "album";
   sort?: LibrarySort;
   order?: SortOrder;
   watched?: boolean;

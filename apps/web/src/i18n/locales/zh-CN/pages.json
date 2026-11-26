@@ -433,6 +433,11 @@
       "library": "媒体库",
       "collections": "合集"
     },
+    "show": {
+      "label": "显示",
+      "artists": "艺人",
+      "albums": "专辑"
+    },
     "sorts": {
       "title": "标题",
       "year": "年份",
@@ -448,13 +453,15 @@
       "movies_other": "{{count, number}} 部电影",
       "shows_other": "{{count, number}} 部剧集",
       "music_other": "{{count, number}} 位艺人",
-      "audiobooks_other": "{{count, number}} 本书"
+      "audiobooks_other": "{{count, number}} 本书",
+      "albums_other": "{{count, number}} 张专辑"
     },
     "countOf": {
       "movies_other": "{{count, number}} 部电影中的 {{shown, number}} 部",
       "shows_other": "{{count, number}} 部剧集中的 {{shown, number}} 部",
       "music_other": "{{count, number}} 位艺人中的 {{shown, number}} 位",
-      "audiobooks_other": "{{count, number}} 本书中的 {{shown, number}} 本"
+      "audiobooks_other": "{{count, number}} 本书中的 {{shown, number}} 本",
+      "albums_other": "{{count, number}} 张专辑中的 {{shown, number}} 张"
     },
     "all": {
       "movies": "所有电影",
