@@ -142,6 +142,7 @@ pub enum Service {
     Tvdb,
     Tvmaze,
     Musicbrainz,
+    Fanart,
     /// Audnexus and Open Library.
     Audiobooks,
     Transcoder,
@@ -155,6 +156,7 @@ impl Service {
             Service::Tvdb => "TheTVDB",
             Service::Tvmaze => "TVmaze",
             Service::Musicbrainz => "MusicBrainz",
+            Service::Fanart => "fanart.tv",
             Service::Audiobooks => "Audnexus or Open Library",
             Service::Transcoder => "The transcoder",
             Service::Opensubtitles => "OpenSubtitles",
@@ -205,12 +207,16 @@ pub async fn test_service(
     if req.service == Service::Opensubtitles {
         return Json(test_opensubtitles(&state, &req).await);
     }
-    let saved = if req.service == Service::Tvdb { &settings.tvdb_api_key } else { &settings.tmdb_api_key };
+    let saved = match req.service {
+        Service::Tvdb => &settings.tvdb_api_key,
+        Service::Fanart => &settings.fanart_api_key,
+        _ => &settings.tmdb_api_key,
+    };
     let key = req.api_key.as_deref().unwrap_or(saved).trim().to_owned();
     let pin = req.pin.as_deref().unwrap_or(&settings.tvdb_pin).trim().to_owned();
     let name = req.service.name();
     let fail = |message: String, ms: u64| Json(TestResult { ok: false, message, refused: false, ms });
-    if matches!(req.service, Service::Tmdb | Service::Tvdb) && key.is_empty() {
+    if matches!(req.service, Service::Tmdb | Service::Tvdb | Service::Fanart) && key.is_empty() {
         return fail(format!("Enter a {name} API key first."), 0);
     }
 
@@ -221,6 +227,7 @@ pub async fn test_service(
             Service::Tvdb => state.metadata.check_provider(Check::Tvdb { key: &key, pin: &pin }).await.map(|()| None),
             Service::Tvmaze => state.metadata.check_provider(Check::Tvmaze).await.map(|()| None),
             Service::Musicbrainz => state.metadata.check_provider(Check::MusicBrainz).await.map(|()| None),
+            Service::Fanart => state.metadata.check_provider(Check::Fanart { key: &key }).await.map(|()| None),
             Service::Audiobooks => state.metadata.check_provider(Check::Books).await.map(|()| None),
             Service::Opensubtitles => unreachable!("tested above"),
             Service::Transcoder => match state.transcoder.status().await {

@@ -1450,6 +1450,8 @@ async fn plex_data_comes_before_metadata_and_titles_found_by_id_after_it() {
             tvdb: format!("{base}/tvdb"),
             musicbrainz: format!("{base}/mb"),
             cover_art: format!("{base}/caa"),
+            fanart: format!("{base}/fanart"),
+            audiodb: format!("{base}/audiodb"),
             tmdb: format!("{base}/tmdb"),
             tmdb_images: format!("{base}/tmdb-images"),
             opensubtitles: format!("{base}/opensubtitles"),

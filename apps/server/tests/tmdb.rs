@@ -232,6 +232,8 @@ async fn world_with_transcoder(transcoder: Option<String>) -> (TestApp, Tmdb, St
             tvdb: format!("{base}/tvdb"),
             musicbrainz: format!("{base}/mb"),
             cover_art: format!("{base}/caa"),
+            fanart: format!("{base}/fanart"),
+            audiodb: format!("{base}/audiodb"),
             tmdb: format!("{base}/tmdb"),
             tmdb_images: format!("{base}/tmdb-images"),
             opensubtitles: format!("{base}/opensubtitles"),

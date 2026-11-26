@@ -64,6 +64,9 @@ pub struct Settings {
     pub tvdb_pin: String,
     /// Look artists and albums up on MusicBrainz (covers from the Cover Art Archive).
     pub music_metadata: bool,
+    /// fanart.tv's key, for artists' pictures ([`crate::providers::artist_pictures`]).
+    /// Empty: TheAudioDB's alone.
+    pub fanart_api_key: String,
     /// Look audiobooks up on Open Library, and Audnexus for those with an ASIN
     /// ([`crate::providers::books`]).
     pub book_metadata: bool,
@@ -231,6 +234,7 @@ impl Default for Settings {
             tvdb_api_key: String::new(),
             tvdb_pin: String::new(),
             music_metadata: true,
+            fanart_api_key: String::new(),
             book_metadata: true,
             read_nfo: true,
             strm_files: false,
@@ -610,6 +614,7 @@ pub struct SettingsPatch {
     pub tvdb_api_key: Option<String>,
     pub tvdb_pin: Option<String>,
     pub music_metadata: Option<bool>,
+    pub fanart_api_key: Option<String>,
     pub book_metadata: Option<bool>,
     pub read_nfo: Option<bool>,
     pub strm_files: Option<bool>,
@@ -735,6 +740,9 @@ impl SettingsStore {
         }
         if let Some(v) = patch.music_metadata {
             next.music_metadata = v;
+        }
+        if let Some(v) = patch.fanart_api_key {
+            next.fanart_api_key = v.trim().to_owned();
         }
         if let Some(v) = patch.book_metadata {
             next.book_metadata = v;

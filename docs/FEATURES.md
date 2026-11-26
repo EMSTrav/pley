@@ -50,7 +50,8 @@ In the web and desktop apps only, for now.
 ## Metadata
 
 - Movies from TMDB (free API key), TV from TMDB, TheTVDB or TVmaze, music
-  from MusicBrainz, audiobooks from Open Library and Audnexus
+  from MusicBrainz with artists' pictures from fanart.tv and TheAudioDB,
+  audiobooks from Open Library and Audnexus
   ([Metadata sources](CONFIGURATION.md#metadata-sources)).
 - NFO files from Kodi, Jellyfin, Radarr, Sonarr and others decide the
   match and override online sources

@@ -16,6 +16,7 @@ const SETTINGS = {
   tvdb_api_key: "",
   tvdb_pin: "",
   music_metadata: true,
+  fanart_api_key: "",
   book_metadata: true,
   hwaccel: "auto",
   hardware_decoding: true,

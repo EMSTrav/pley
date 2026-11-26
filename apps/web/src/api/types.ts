@@ -1059,6 +1059,8 @@ export interface Settings {
   tvdb_pin: string;
   /** Artists and albums from MusicBrainz, covers from the Cover Art Archive. */
   music_metadata: boolean;
+  /** fanart.tv's, for artists' pictures; empty: TheAudioDB's alone. */
+  fanart_api_key: string;
   /** Audiobooks from Open Library, and Audnexus for those with an ASIN. Absent from servers before it. */
   book_metadata?: boolean;
   /**
@@ -1173,7 +1175,7 @@ export interface Settings {
 export type MinimumAvailability = "announced" | "in_cinemas" | "released";
 
 /** A service the settings can test (`POST /api/settings/test`). */
-export type TestedService = "tmdb" | "tvdb" | "tvmaze" | "musicbrainz" | "audiobooks" | "transcoder" | "opensubtitles";
+export type TestedService = "tmdb" | "tvdb" | "tvmaze" | "musicbrainz" | "fanart" | "audiobooks" | "transcoder" | "opensubtitles";
 
 export interface ServiceTest {
   service: TestedService;

@@ -27,6 +27,7 @@ const KEYS = [
   "tvdb_api_key",
   "tvdb_pin",
   "music_metadata",
+  "fanart_api_key",
   "book_metadata",
   "read_nfo",
   "scan_interval_minutes",
@@ -162,6 +163,16 @@ ${form.tvdb_pin}`}
                 <Toggle checked={form.music_metadata} onChange={(v) => set("music_metadata", v)} label={t("server.metadata.musicToggle")} />
                 <TestButton label={t("server.metadata.testMusicBrainz")} test={{ service: "musicbrainz" }} />
               </Row>
+              {form.fanart_api_key !== undefined ? (
+                <Row
+                  label={t("server.metadata.fanartKey")}
+                  htmlFor="fanart-key"
+                  hint={<Trans t={t} i18nKey="server.metadata.fanartKeyHint" components={{ a: <Link href="https://fanart.tv/get-an-api-key/" /> }} />}
+                >
+                  <SecretInput id="fanart-key" what="key" value={form.fanart_api_key} onChange={(v) => set("fanart_api_key", v)} />
+                  <TestButton key={form.fanart_api_key} label={t("server.metadata.testFanart")} test={{ service: "fanart", api_key: form.fanart_api_key }} />
+                </Row>
+              ) : null}
               {form.book_metadata !== undefined ? (
                 <Row
                   label={t("server.metadata.books")}

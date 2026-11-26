@@ -68,6 +68,9 @@ const IMAGE_HOSTS: &[&str] = &[
     "artworks.thetvdb.com",
     "coverartarchive.org",
     "assets.fanart.tv",
+    // TheAudioDB's artists' pictures.
+    "r2.theaudiodb.com",
+    "www.theaudiodb.com",
     "theposterdb.com",
     "raw.githubusercontent.com",
     // Audnexus's covers, Audible's.

@@ -4,7 +4,8 @@
 //! - [`tvdb`]: TheTVDB v4, TV shows, needs an API key (and for some keys a
 //!   subscriber PIN).
 //! - [`musicbrainz`]: artists and albums, no key needed, with album covers
-//!   from the Cover Art Archive.
+//!   from the Cover Art Archive and artists' pictures from fanart.tv and
+//!   TheAudioDB ([`artist_pictures`]).
 //! - [`books`]: audiobooks from Open Library, and Audnexus for those whose
 //!   files carry an Audible ASIN, no key needed.
 //! - [`opensubtitles`]: subtitles to add to a file, with an API key each
@@ -15,6 +16,7 @@
 //! [`Providers`]. The TV providers only fetch and translate; [`tv::write`]
 //! stores a show the same way for both.
 
+pub mod artist_pictures;
 pub mod books;
 pub mod musicbrainz;
 pub mod opensubtitles;
@@ -54,6 +56,10 @@ pub struct Endpoints {
     pub tvdb: String,
     pub musicbrainz: String,
     pub cover_art: String,
+    /// fanart.tv's API (used once its key is set) and TheAudioDB's, for
+    /// artists' pictures.
+    pub fanart: String,
+    pub audiodb: String,
     /// TMDB's API (used once a TMDB key is set).
     pub tmdb: String,
     /// TMDB's pictures, as Discover shows them (fetched by pley, see
@@ -74,6 +80,8 @@ impl Default for Endpoints {
             tvdb: tvdb::API.into(),
             musicbrainz: musicbrainz::API.into(),
             cover_art: musicbrainz::COVER_ART.into(),
+            fanart: artist_pictures::FANART.into(),
+            audiodb: artist_pictures::AUDIODB.into(),
             tmdb: crate::metadata::API.into(),
             tmdb_images: crate::metadata::IMAGES.into(),
             opensubtitles: opensubtitles::API.into(),
@@ -133,9 +141,19 @@ pub async fn settings_changed(db: &Db, before: &Settings, after: &Settings) -> s
     let tvdb_key =
         (before.tvdb_api_key != after.tvdb_api_key || before.tvdb_pin != after.tvdb_pin) && tv == Some(TvSource::Tvdb);
     let music = after.music_metadata && !before.music_metadata;
+    // A new fanart.tv key: artists still missing a picture are looked up again.
+    let fanart = before.fanart_api_key != after.fanart_api_key && !after.fanart_api_key.is_empty();
+    if fanart {
+        sqlx::query(
+            "UPDATE items SET metadata_at = NULL
+             WHERE kind = 'artist' AND metadata_locked = 0 AND (poster IS NULL OR backdrop IS NULL)",
+        )
+        .execute(&db.write)
+        .await?;
+    }
     let books = after.book_metadata && !before.book_metadata;
     let nfo = before.read_nfo != after.read_nfo;
-    Ok(tmdb_key || tvdb_key || music || books || nfo || (tv_changed && tv.is_some()))
+    Ok(tmdb_key || tvdb_key || music || fanart || books || nfo || (tv_changed && tv.is_some()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -164,6 +182,10 @@ pub enum Check<'a> {
     },
     Tvmaze,
     MusicBrainz,
+    /// fanart.tv with this key.
+    Fanart {
+        key: &'a str,
+    },
     /// Audnexus and Open Library.
     Books,
 }
@@ -203,8 +225,10 @@ impl Providers {
                     client(true),
                     &e.musicbrainz,
                     &e.cover_art,
+                    artist_pictures::ArtistPictures::new(client(true), &e.fanart, &e.audiodb),
                     db.clone(),
                     store.clone(),
+                    settings.clone(),
                 )),
                 Some(books::Books::new(
                     client(true),
@@ -236,6 +260,7 @@ impl Providers {
             Check::Tvdb { key, pin } => self.tvdb.as_ref().ok_or_else(off)?.check(key, pin).await,
             Check::Tvmaze => self.tvmaze.as_ref().ok_or_else(off)?.check().await,
             Check::MusicBrainz => self.musicbrainz.as_ref().ok_or_else(off)?.check().await,
+            Check::Fanart { key } => self.musicbrainz.as_ref().ok_or_else(off)?.check_fanart(key).await,
             Check::Books => self.books.as_ref().ok_or_else(off)?.check().await,
         }
     }

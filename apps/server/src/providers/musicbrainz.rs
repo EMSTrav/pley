@@ -7,7 +7,8 @@
 //! The files' tags win: MusicBrainz fills in what they lack (genres, the
 //! release date, the year, a cover) and links artists and albums to their
 //! MusicBrainz ids (MBIDs). Files tagged with MusicBrainz Picard carry those
-//! ids, which saves the search. Artists get no picture: MusicBrainz has none.
+//! ids, which saves the search. MusicBrainz has no pictures of artists: once
+//! an artist's id is known, [`ArtistPictures`] looks theirs up elsewhere.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -18,9 +19,11 @@ use reqwest::header::ACCEPT;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
+use super::artist_pictures::ArtistPictures;
 use super::{Api, ProviderError, Throttle, artwork, full_date, loose_id, nullable, title_score, year_of, year_score};
 use crate::db::Db;
 use crate::library::LibraryRow;
+use crate::settings::SettingsStore;
 use crate::store::Store;
 use crate::util::{normalize_key, now};
 
@@ -38,8 +41,10 @@ pub struct MusicBrainz {
     api: Api,
     base: String,
     cover_art: String,
+    pictures: ArtistPictures,
     db: Db,
     store: Arc<Store>,
+    settings: Arc<SettingsStore>,
     /// MusicBrainz's genres: search results carry free-form tags, and the
     /// tags that are genres are the album's or artist's genres.
     genres: tokio::sync::OnceCell<HashSet<String>>,
@@ -168,8 +173,24 @@ struct AlbumRow {
     artist_mbid: Option<String>,
 }
 
+#[derive(sqlx::FromRow)]
+struct ArtistRow {
+    title: String,
+    musicbrainz_id: Option<String>,
+    poster: Option<String>,
+    backdrop: Option<String>,
+}
+
 impl MusicBrainz {
-    pub fn new(http: reqwest::Client, base: &str, cover_art: &str, db: Db, store: Arc<Store>) -> Self {
+    pub fn new(
+        http: reqwest::Client,
+        base: &str,
+        cover_art: &str,
+        pictures: ArtistPictures,
+        db: Db,
+        store: Arc<Store>,
+        settings: Arc<SettingsStore>,
+    ) -> Self {
         let base = base.trim_end_matches('/').to_owned();
         // The public server allows a request a second; mirrors don't limit.
         let throttle = if base == API {
@@ -181,8 +202,10 @@ impl MusicBrainz {
             api: Api::new(http, "MusicBrainz", throttle),
             base,
             cover_art: cover_art.trim_end_matches('/').to_owned(),
+            pictures,
             db,
             store,
+            settings,
             genres: tokio::sync::OnceCell::new(),
         }
     }
@@ -354,12 +377,13 @@ impl MusicBrainz {
     }
 
     async fn refresh_artist(&self, id: i64) -> Result<(), ProviderError> {
-        let row: Option<(String, Option<String>)> =
-            sqlx::query_as("SELECT title, musicbrainz_id FROM items WHERE id = ? AND kind = 'artist'")
-                .bind(id)
-                .fetch_optional(&self.db.read)
-                .await?;
-        let (name, known) = row.ok_or(ProviderError::NotFound)?;
+        let row: Option<ArtistRow> = sqlx::query_as(
+            "SELECT title, musicbrainz_id, poster, backdrop FROM items WHERE id = ? AND kind = 'artist'",
+        )
+        .bind(id)
+        .fetch_optional(&self.db.read)
+        .await?;
+        let ArtistRow { title: name, musicbrainz_id: known, poster, backdrop } = row.ok_or(ProviderError::NotFound)?;
         if UNKNOWN.contains(&name.as_str()) {
             return Err(ProviderError::NotFound);
         }
@@ -381,12 +405,21 @@ impl MusicBrainz {
             }
         };
         let genres = (!genres.is_empty()).then(|| serde_json::to_string(&genres).unwrap_or_default());
+        // Pictures in the artist's folder win ([`artwork`] keeps them).
+        let key = self.settings.get().fanart_api_key.clone();
+        let found = self.pictures.find(&mbid, key.trim()).await;
+        let poster = artwork(&self.store, poster.as_deref(), found.picture.as_deref()).await;
+        let backdrop = artwork(&self.store, backdrop.as_deref(), found.background.as_deref()).await;
         let now = now();
         sqlx::query(
-            "UPDATE items SET musicbrainz_id = ?, genres = COALESCE(genres, ?), metadata_at = ?, updated_at = ? WHERE id = ?",
+            "UPDATE items SET musicbrainz_id = ?, genres = COALESCE(genres, ?), poster = COALESCE(?, poster),
+                backdrop = COALESCE(?, backdrop), metadata_at = ?, updated_at = ?
+             WHERE id = ?",
         )
         .bind(&mbid)
         .bind(genres)
+        .bind(poster)
+        .bind(backdrop)
         .bind(now)
         .bind(now)
         .bind(id)
@@ -431,6 +464,11 @@ impl MusicBrainz {
         let known = self.known_genres().await;
         let genres = known.map(|k| top_genres(&group.tags, Some(k))).unwrap_or_default();
         Ok(Some(AlbumMatch::new(group, genres)))
+    }
+
+    /// Whether fanart.tv takes `key`.
+    pub async fn check_fanart(&self, key: &str) -> Result<(), ProviderError> {
+        self.pictures.check_fanart(key).await
     }
 
     /// Whether MusicBrainz answers a search.

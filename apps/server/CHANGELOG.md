@@ -9,6 +9,13 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Artists get pictures from fanart.tv and TheAudioDB, as MusicBrainz has
+  none. A fanart.tv key, free from fanart.tv, goes in Settings → Server →
+  Metadata; without one, TheAudioDB's pictures alone. Pictures in an
+  artist's folder still win.
+
 ## [0.1.17] - 2026-11-25
 
 ### Added

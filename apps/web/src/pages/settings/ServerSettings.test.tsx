@@ -16,6 +16,7 @@ const SETTINGS = {
   tvdb_api_key: "",
   tvdb_pin: "",
   music_metadata: true,
+  fanart_api_key: "",
   book_metadata: true,
   hwaccel: "auto",
   hardware_decoding: true,
@@ -104,6 +105,34 @@ describe("ServerSettings", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(requests.find((r) => r.method === "PUT")?.body).toEqual({ read_nfo: false }));
     expect(screen.getByRole("switch", { name: "Read NFO files" })).not.toBeChecked();
+  });
+
+  it("saves a fanart.tv key for artists' pictures and tests it as typed, on a server that has it", async () => {
+    const user = userEvent.setup();
+    const requests = mockApi({
+      "GET /api/settings": () => SETTINGS,
+      "GET /api/system": () => ({}),
+      "POST /api/settings/test": (): ServiceTestResult => ({ ok: true, message: "fanart.tv accepted the key.", refused: false, ms: 80 }),
+      "PUT /api/settings": (req) => ({ ...SETTINGS, ...(req.body as Partial<Settings>) }),
+    });
+    renderWithProviders(<ServerSettings />);
+    const key = await screen.findByLabelText("fanart.tv API key");
+    await user.type(key, "my-key");
+    await user.click(screen.getByRole("button", { name: "Test the fanart.tv key" }));
+    expect(await screen.findByText("fanart.tv accepted the key.")).toBeInTheDocument();
+    expect(requests.find((r) => r.method === "POST")?.body).toEqual({ service: "fanart", api_key: "my-key" });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(requests.find((r) => r.method === "PUT")?.body).toEqual({ fanart_api_key: "my-key" }));
+  });
+
+  it("has no fanart.tv key on a server before artists' pictures", async () => {
+    const before: Partial<Settings> = { ...SETTINGS };
+    delete before.fanart_api_key;
+    mockApi({ "GET /api/settings": () => before, "GET /api/system": () => ({}) });
+    renderWithProviders(<ServerSettings />);
+    expect(await screen.findByLabelText("Server name")).toHaveValue("Den");
+    expect(screen.queryByLabelText("fanart.tv API key")).not.toBeInTheDocument();
   });
 
   it("has no NFO switch for a server that doesn't read NFO files", async () => {

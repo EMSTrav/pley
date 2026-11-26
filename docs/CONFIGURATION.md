@@ -89,7 +89,7 @@ its console window, or signing out.
 |---|---|---|
 | Movies | [TMDB](https://www.themoviedb.org) | Free API key |
 | TV shows | TMDB, [TheTVDB](https://thetvdb.com) or [TVmaze](https://www.tvmaze.com) | TMDB's key; TheTVDB's key (and subscriber PIN for user-supported keys); none for TVmaze |
-| Music | [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org) | None |
+| Music | [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org); artists' pictures from [fanart.tv](https://fanart.tv) and [TheAudioDB](https://www.theaudiodb.com) | None; fanart.tv's free key for its pictures |
 | Audiobooks | [Open Library](https://openlibrary.org), and [Audnexus](https://audnex.us) for books with an Audible ASIN | None |
 
 - *Automatic* uses TMDB for TV when it has a key, then TheTVDB, else TVmaze.
@@ -111,6 +111,12 @@ its console window, or signing out.
   in air date order.
 - MusicBrainz only fills in what the tags lack and allows one request a
   second, so the first look-up of a big music library takes a while.
+- MusicBrainz has no pictures of artists. Once it knows an artist, Pley
+  asks fanart.tv for their picture and background, when it has a key
+  (free, from [fanart.tv](https://fanart.tv/get-an-api-key/)), and
+  TheAudioDB for what's still missing. A picture in the artist's folder
+  (`artist.jpg`, `folder.jpg`, `fanart.jpg`) wins over both. Setting a
+  fanart.tv key looks artists without pictures up again.
 - Audiobooks are looked up on Open Library by their title and writer, for
   a summary, year and cover. Books whose files carry an Audible ASIN tag
   (`asin`, as Libation and OpenAudible write it) are looked up by it on
@@ -128,7 +134,8 @@ data from TVmaze is licensed
 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). TV metadata
 from TheTVDB; please consider adding missing information or subscribing.
 Music data from MusicBrainz is public domain (CC0); covers from the Cover Art
-Archive belong to their owners. Open Library's data is public domain (CC0);
+Archive, and artists' pictures from fanart.tv and TheAudioDB, belong to their
+owners. Open Library's data is public domain (CC0);
 audiobook data and covers from Audnexus belong to their owners.
 
 ## NFO files

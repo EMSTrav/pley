@@ -1,6 +1,6 @@
 //! Metadata providers end to end: libraries are scanned and their metadata
-//! fetched from a local stand-in for TVmaze, TheTVDB, MusicBrainz and the
-//! Cover Art Archive that answers with the fixtures in
+//! fetched from a local stand-in for TVmaze, TheTVDB, MusicBrainz, the
+//! Cover Art Archive, fanart.tv and TheAudioDB that answers with the fixtures in
 //! `tests/fixtures/providers`. Nothing leaves the machine: the pictures the
 //! answers name are stored beforehand, as if downloaded by an earlier
 //! refresh.
@@ -41,6 +41,9 @@ const OL_WORK: &str = include_str!("fixtures/providers/openlibrary_work.json");
 
 const DISCOVERY: &str = "48117b90-a16e-34ca-a514-19c702df1158";
 const DAFT_PUNK: &str = "056e4f3e-d505-4dad-8ec1-d04f521cbb56";
+const FANART_THUMB: &str = "https://assets.fanart.tv/fanart/music/daft-punk-thumb.jpg";
+const FANART_BACKGROUND: &str = "https://assets.fanart.tv/fanart/music/daft-punk-background.jpg";
+const AUDIODB_THUMB: &str = "https://r2.theaudiodb.com/images/media/artist/thumb/daft-punk.jpg";
 
 // ------------------------------------------------------------------ stand-in services
 
@@ -188,6 +191,36 @@ async fn start_mock() -> (Mock, String) {
                 }
             }),
         )
+        // fanart.tv and TheAudioDB: Daft Punk's pictures
+        .route(
+            "/fanart/music/{mbid}",
+            get(|Path(mbid): Path<String>, headers: HeaderMap| async move {
+                if headers.get("api-key").and_then(|k| k.to_str().ok()) != Some("fanart-key") {
+                    StatusCode::UNAUTHORIZED.into_response()
+                } else if mbid == DAFT_PUNK {
+                    json_reply(&format!(
+                        r#"{{"name": "Daft Punk", "mbid_id": "{DAFT_PUNK}",
+                            "artistthumb": [{{"id": "1", "url": "{FANART_THUMB}", "likes": "4"}}],
+                            "artistbackground": [{{"id": "2", "url": "{FANART_BACKGROUND}", "likes": "1"}}]}}"#
+                    ))
+                } else {
+                    StatusCode::NOT_FOUND.into_response()
+                }
+            }),
+        )
+        .route(
+            "/audiodb/artist-mb.php",
+            get(|Query(q): Query<Vec<(String, String)>>| async move {
+                if q.iter().any(|(k, v)| k == "i" && v == DAFT_PUNK) {
+                    json_reply(&format!(
+                        r#"{{"artists": [{{"strArtist": "Daft Punk", "strArtistThumb": "{AUDIODB_THUMB}",
+                            "strArtistFanart": null}}]}}"#
+                    ))
+                } else {
+                    json_reply(r#"{"artists": null}"#)
+                }
+            }),
+        )
         .layer(axum::middleware::from_fn_with_state(mock.clone(), record))
         .with_state(mock.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -213,6 +246,8 @@ impl TestApp {
             tvdb: format!("{base}/tvdb"),
             musicbrainz: format!("{base}/mb"),
             cover_art: format!("{base}/caa"),
+            fanart: format!("{base}/fanart"),
+            audiodb: format!("{base}/audiodb"),
             tmdb: format!("{base}/tmdb"),
             tmdb_images: format!("{base}/tmdb-images"),
             opensubtitles: format!("{base}/opensubtitles"),
@@ -519,6 +554,68 @@ async fn music_from_musicbrainz() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["message"].as_str().unwrap().contains("MusicBrainz"));
     assert_eq!(mock.requests.lock().len(), before);
+}
+
+/// Artists' pictures: TheAudioDB's without a fanart.tv key, fanart.tv's once
+/// one is set, and the artist's own folder's over both.
+#[tokio::test]
+async fn artists_pictures_from_fanart_tv_and_theaudiodb() {
+    let (mock, base) = start_mock().await;
+    let app = TestApp::new(&base).await;
+    for url in [FANART_THUMB, FANART_BACKGROUND, AUDIODB_THUMB] {
+        app.seed_picture(url).await;
+    }
+    let blob = |url: &'static str| {
+        let db = app.state.db.read.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT blob FROM remote_images WHERE url = ?")
+                .bind(url)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+        }
+    };
+    let pictures = |id: i64| {
+        let db = app.state.db.read.clone();
+        async move {
+            sqlx::query_as::<_, (Option<String>, Option<String>)>("SELECT poster, backdrop FROM items WHERE id = ?")
+                .bind(id)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+        }
+    };
+    let token = app.setup_admin().await;
+    app.media_file("music/Daft Punk/Discovery/01 - One More Time.mp3");
+    let lib = app.library(&token, "music", "music").await;
+    let artist = app.single_item(&token, lib).await["id"].as_i64().unwrap();
+
+    // No key: TheAudioDB's picture, and no background (it has none).
+    assert_eq!(pictures(artist).await, (Some(blob(AUDIODB_THUMB).await), None));
+    assert_eq!(mock.requested("GET /fanart/"), 0, "fanart.tv isn't asked without a key");
+    assert_eq!(mock.requested(&format!("GET /audiodb/artist-mb.php?i={DAFT_PUNK}")), 1);
+
+    // A key: the artist is looked up again, and fanart.tv's pictures win.
+    let (status, body) =
+        app.call(Method::PUT, "/api/settings", Some(&token), Some(json!({"fanart_api_key": " fanart-key "}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    app.wait_for_scans().await;
+    assert_eq!(pictures(artist).await, (Some(blob(FANART_THUMB).await), Some(blob(FANART_BACKGROUND).await)));
+    assert!(mock.requests.lock().iter().all(|r| !r.contains("fanart-key")), "the key isn't in an address");
+    let item = app.get(&format!("/api/items/{artist}"), &token).await;
+    assert!(item["poster_url"].is_string() && item["backdrop_url"].is_string(), "{item}");
+
+    // The artist's own picture wins.
+    let own = app.media.path().join("music/Daft Punk/artist.jpg");
+    std::fs::write(&own, b"\xff\xd8\xff\xe0own").unwrap();
+    let (status, _) = app.call(Method::POST, &format!("/api/items/{artist}/refresh"), Some(&token), None).await;
+    assert!(status.is_success(), "{status}");
+    let (status, _) =
+        app.call(Method::POST, &format!("/api/libraries/{lib}/scan"), Some(&token), Some(json!({"force": true}))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    app.wait_for_scans().await;
+    let (poster, _) = pictures(artist).await;
+    assert_eq!(poster.as_deref().map(std::path::Path::new), Some(own.as_path()), "the folder's picture");
 }
 
 /// Books from Open Library by their title and writer, from Audnexus once

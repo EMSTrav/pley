@@ -4975,7 +4975,7 @@ on another administrator's account, but for the `GET`s
   `"auto"` and turns `hardware_decoding` on; a combination saved before
   stays.
 - **`settings/test`** makes one request to `service` (`"tmdb"`, `"tvdb"`,
-  `"tvmaze"`, `"musicbrainz"`, `"audiobooks"` (Open Library and Audnexus),
+  `"tvmaze"`, `"musicbrainz"`, `"fanart"` (fanart.tv), `"audiobooks"` (Open Library and Audnexus),
   `"transcoder"` or `"opensubtitles"`) with the
   key and PIN given (not saved), else the saved ones. OpenSubtitles: its
   key, or with a `username`, a sign-in of that account (`password` left
@@ -5059,6 +5059,7 @@ interface Settings {
   tvdb_api_key: string;             // TheTVDB v4 key; "" = not set
   tvdb_pin: string;                 // TheTVDB subscriber PIN, for user-supported keys
   music_metadata: boolean;          // MusicBrainz + Cover Art Archive for music libraries (default true)
+  fanart_api_key: string;           // fanart.tv's, for artists' pictures; without it, TheAudioDB's alone. Setting one looks artists without pictures up again
   book_metadata: boolean;           // Open Library and Audnexus for audiobook libraries (default true)
   read_nfo: boolean;                // read NFO files next to movies, shows, seasons and episodes (default
                                     // true; see CONFIGURATION.md). A change scans every library
