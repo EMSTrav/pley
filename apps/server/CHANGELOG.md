@@ -11,8 +11,43 @@ describes how they are made.
 
 ### Added
 
+- Live TV plays a channel as the provider sends it when the device decodes
+  it (HEVC and 10-bit included), and transcodes only for players that need it.
+- Playback details in the web app's Live TV player.
 - The web app's sidebar can be narrowed to its icons, with Collapse sidebar at
   its foot; each browser remembers how it was left.
+
+## [0.1.17] - 2026-11-25
+
+### Added
+
+- Audiobooks in apps that show them: an app's request with
+  `X-Pley-Features: audiobooks` gets audiobook libraries as the web app
+  does. Pley for Android asks for them.
+- A player can ask for the next track ahead (`ahead`), to play it
+  without a gap: it isn't shown as playing on the dashboard, to remotes
+  or in Tautulli until it plays.
+
+### Changed
+
+- Where Dolby Vision needs another FFmpeg, the transcoder settings name
+  Pley's own first: the one its Windows installer and Docker image bring.
+
+### Fixed
+
+- Live TV channels played as they are no longer stall every few seconds in the
+  browser, and play on after a few seconds when their provider's stream starts
+  over.
+- An NFO file with a very long content rating no longer holds a library
+  scan up.
+- A damaged Matroska file no longer makes the transcoder take memory for
+  more than the file holds.
+- What metadata services and IPTV providers answer is refused once it
+  passes a size limit, rather than read whole first.
+- With FFmpeg 7.1 or 8, a converted file whose subtitles end before the
+  credits do is kept, rather than thrown away as cut short.
+- Apps and tools that edit through the Plex- or Jellyfin-compatible API, such
+  as Kometa, can no longer change audiobooks, which those APIs don't show.
 
 ## [0.1.16] - 2026-11-24
 
@@ -1259,7 +1294,8 @@ On Intel graphics:
 - First release with a version of its own (builds before it carried 0.2.0,
   the version every app shared).
 
-[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-24...HEAD
+[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-25...HEAD
+[0.1.17]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-25
 [0.1.16]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-24
 [0.1.15]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-22
 [0.1.14]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-20

@@ -53,6 +53,9 @@ fun cardSubtitle(item: ItemSummary, words: FormatWords, locale: Locale = words.l
         item.grandparentTitle?.takeIf { it.isNotEmpty() },
         item.parentTitle?.takeIf { it.isNotEmpty() },
     ).joinToString(" · ")
+    // A book is known by its writers, as on the web; its part by its book.
+    ItemKind.Audiobook -> item.authors.joinToString(", ")
+    ItemKind.Part -> item.parentTitle.orEmpty()
     else -> ""
 }
 
@@ -98,7 +101,8 @@ fun isInProgress(item: ItemSummary): Boolean {
  * What a screen reader says for a tile: the title, then what places it,
  * then its state, in [words], its counts in [locale]'s digits.
  * "Glasshouse, Season 2 Episode 5, 26 minutes left"; "Northern Lights,
- * 2024, watched"; "Severance, 2 seasons, 6 unwatched".
+ * 2024, watched"; "Severance, 2 seasons, 6 unwatched"; a book heard to
+ * its end, "Harbor Lights, Ilse Brandt, finished".
  */
 fun tileDescription(item: ItemSummary, words: FormatWords, locale: Locale = words.locale): String {
     val context = when (item.kind) {
@@ -111,7 +115,8 @@ fun tileDescription(item: ItemSummary, words: FormatWords, locale: Locale = word
     val unwatched = unwatchedCount(item)
     val state = when {
         isInProgress(item) -> spokenTimeLeft(item.userState.positionMs, item.durationMs, words)
-        item.userState.watched -> words.watched
+        // A book is listened to: heard to its end it is finished, as its page says, and so is a part of it.
+        item.userState.watched -> if (item.kind == ItemKind.Audiobook || item.kind == ItemKind.Part) words.finished else words.watched
         (item.kind == ItemKind.Show || item.kind == ItemKind.Season) && unwatched > 0 -> words.unwatched(unwatched)
         else -> ""
     }

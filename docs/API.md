@@ -1723,9 +1723,17 @@ open only some libraries see those, in that order.
   when `ids` aren't the libraries the user may open. It and `DELETE` send
   `libraries_changed` to the user's event streams.
 
-**Audiobooks** are for Pley's own sign-in: the web app and the desktop
-app's window, which show them. A request with an app's token, an
-administrator's included, gets no audiobook library: none in
+**Audiobooks** are for Pley's own sign-in (the web app and the desktop
+app's window, which show them) and for an app's request that says it
+shows them with `X-Pley-Features: audiobooks` (comma-separated features,
+`audiobooks` the only one yet; the Android app sends it with every API
+request and on its event stream, not with pictures, which don't depend
+on it). Such a request gets them as Pley's own
+sign-in does, from the libraries the account may open; an app that sends
+it with some requests only keeps their answers apart from the others' (an
+HTTP cache of their own), as they differ. Any other
+request with an app's token, an administrator's included, gets no
+audiobook library: none in
 `/api/libraries` or among Home's rows, `404` from a library's own routes,
 no `continue_listening` on Home, no book or part in search or history,
 and no scan or change of an audiobook library in `/api/events`, one
@@ -1974,8 +1982,9 @@ WebVTT file named `.srt` is taken as WebVTT). Its language is kept as ISO
 | GET | `/api/search?q=&limit=` | `library` | `{ items: ItemSummary[], people: PersonSummary[], channels: LiveChannel[] }`: `items`, `people` and `channels` each up to `limit` (default 40, 1 to 200): titles, people, and Live TV channels by name, number or what's on, for those Live TV is open to. The apps ask for 200 |
 
 - **Home** hubs, empty ones left out: `continue_watching` (in progress and
-  next up), then `continue_listening` (audiobooks part way through; never
-  for an app's token, see [Audiobooks](#libraries)), then
+  next up), then `continue_listening` (audiobooks part way through; for
+  an app's token only with `X-Pley-Features: audiobooks`, see
+  [Audiobooks](#libraries)), then
   `my_list` ("My List", its 20 newest), then the rows administrators put
   on Home ([Rows](#rows)): collections, and each music and audiobook
   library's `recently_added:<library_id>`.
@@ -2041,7 +2050,8 @@ library's hubs) holds the audiobooks the user is part way through, the
 one heard last first: a part started, or one finished and another still
 to hear. Its items are the books; `on-deck` says where each goes on. A
 finished book leaves it. Audiobooks are never in Continue Watching, and an
-app's token gets no Continue Listening ([Audiobooks](#libraries)).
+app's token gets no Continue Listening unless its request has
+`X-Pley-Features: audiobooks` ([Audiobooks](#libraries)).
 
 **`DELETE /api/continue-watching/{id}`** takes a movie, or for an episode
 (in progress or next up) its whole show, out of the user's Continue
@@ -2465,6 +2475,9 @@ one of an audiobook library is refused (`400`).
   client_id?: string;             // identifies the player (browser tab, device)
   keep_previous?: boolean;        // the client's last session plays on: don't end it (the player ends it
                                   // as it moves over)
+  ahead?: boolean;                // with keep_previous: asked for ahead, to play once what plays ends (music's
+                                  // next track, without a gap): not listed as playing (the dashboard, remotes,
+                                  // the Plex and Jellyfin APIs) until its first progress report
   keyed_urls?: boolean;           // the player can't send the Authorization header: its addresses carry a
                                   // key (Keyed URLs)
   controls?: Control[];           // the remote's commands this player obeys (Remote control); left out: none.
@@ -3361,8 +3374,8 @@ is not a play.
 `item_id` (the item, or the episodes or tracks under it), `library_id`,
 `since` (unix seconds); administrators also `user_id=<id>` or `all=1`.
 Your own plays unless asked otherwise; entries of items you can't see are
-left out, and for an app's token those of audiobooks
-([Audiobooks](#libraries)).
+left out, and for an app's token those of audiobooks, unless its request
+has `X-Pley-Features: audiobooks` ([Audiobooks](#libraries)).
 
 ```ts
 interface HistoryEntry {
@@ -4656,7 +4669,7 @@ household) or `admins`; profiles with an age limit only with `age_limited`;
 | DELETE | `/api/live/channels/{id}/favorite` | `play` | `204` |
 | POST | `/api/live/channels/{id}/watch` | `play` | optional `{ client_id?, keyed_urls?, take_over?, controls?, device_name?, device_kind? }` → `{ session_id, url, kind: "hls", channel: LiveChannel }`: `url` is the channel's live HLS playlist; with `keyed_urls`, an address carrying a key of its own ([Keyed URLs](#keyed-urls)); `take_over`: see Watching, below; `controls`, `device_name` and `device_kind` as a play request's ([Remote control](#remote-control)) |
 | GET | `/api/live/channels/{id}/stream.ts` | `play` | `?client_id=&take_over=&device_kind=`: the channel's MPEG-TS (`video/mp2t`) as the provider sends it (one served as HLS: its segments, with the default audio track put in when the provider keeps it apart), for as long as it is read (VLC, Kodi, TVs that read MPEG-TS). `take_over` counts only with a token: over plain HTTP, a GET the browser's cookie signs in may be another site's link (Pley's page uses `POST …/watch`). A reader that watches by itself obeys no remote and is named from its User-Agent; `device_kind` says what it plays on ([Remote control](#remote-control)) |
-| GET | `/api/live/sessions/{session}/plan` | `play` | `LivePlan \| null`: what the transcoder makes of the channel, waited for up to 3 s; `null` when not known in time. A player that reads MPEG-TS plays a channel whose video and audio are copied from `stream.ts` (with a client id of its own), sooner than its first segments |
+| GET | `/api/live/sessions/{session}/plan` | `play` | `SessionPlan \| null`: what the channel is and what the transcoder makes of it, waited for up to 3 s; `null` when not known in time. A player that reads MPEG-TS plays from `stream.ts` (with a client id of its own) a channel whose video and audio are copied, or one it decodes as the provider sends it (Direct Play, below). Asked again, it answers at once, with the provider's bitrate as it is now, for a player's details |
 | GET | `/api/live/sessions/{session}/{file}` | `play` | `index.m3u8` or a segment of a watching session; `410 session_stopped` once the session is over, with why as `message` |
 | GET | `/api/live/media/{key}/{file}` | `public` (the key) | the same, for a session watched with `keyed_urls` |
 | DELETE | `/api/live/sessions/{session}` | `play` | `204`: stops watching; `404` when not yours (administrators: any) or already gone |
@@ -4741,10 +4754,17 @@ interface LivePlan {
   video_codec: string | null;          // the input's: "h264", "mpeg2video", "hevc"…
   width: number | null; height: number | null; frame_rate: number | null;
   interlaced: boolean;
+  bit_depth: number | null;            // the input's video: 8, 10, 12
   audio_codec: string | null;          // the input's: "aac", "mp2", "ac3"…
   audio_channels: number | null;
-  video: string;                       // "copy", or the encoder: "h264_nvenc", "libx264"…
+  video: string;                       // "copy", "none", or the encoder: "h264_nvenc", "libx264"…
   audio: "copy" | "aac" | "none";
+  out_height: number | null;           // a transcode's lines; null when copied
+  video_kbps: number | null;           // a transcode's video bitrate; null when copied
+}
+interface SessionPlan extends LivePlan {
+  deinterlace: boolean;                // LiveSettings.deinterlace
+  kbps: number;                        // what the provider sends now, kbit/s
 }
 interface LiveTuner {                  // a connection in use
   channel_id: Id; channel_name: string; source_id: Id; source_name: string;
@@ -4756,6 +4776,7 @@ interface LiveTuner {                  // a connection in use
              kind: "hls" | "stream"; started_at: number }[];
   idle: boolean;                       // nobody watches: it goes soon
   plan: LivePlan | null;               // what the transcoder makes of it, for HLS viewers
+  transcoding: boolean;                // an HLS player asked for it: the transcoder makes it now
 }
 ```
 
@@ -4803,7 +4824,17 @@ interface LiveTuner {                  // a connection in use
 - **The stream.** H.264 is sent as it is; other video, and interlaced
   video while `deinterlace` is on, is made H.264 by the transcoder; audio
   that isn't AAC is made AAC stereo. Every player of a channel reads the
-  same HLS stream, made once.
+  same HLS stream, made once, and only once a player asks for its
+  playlist: the plan alone starts nothing.
+- **Direct Play.** A player that reads MPEG-TS plays the channel from
+  `stream.ts` when it decodes what the provider sends: the plan's video
+  (`video_codec`, at its `bit_depth` and size) and sound (`audio_codec`),
+  or either alone. An HEVC channel on a device that plays HEVC takes no
+  transcode. While the server deinterlaces (`deinterlace`), interlaced
+  video goes to the transcoder unless copied, and so does anything else
+  the device doesn't decode. Players show which it is in their Playback
+  details: Direct play from `stream.ts`, Direct stream for copied HLS,
+  else Transcoding.
 - **Leaving.** An HLS viewer that asked for nothing for 45 s has left,
   unless its device reads the channel's `stream.ts` for it instead (as
   `<client_id>-stream`): it stays while that is read.

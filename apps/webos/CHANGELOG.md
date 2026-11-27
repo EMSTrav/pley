@@ -8,6 +8,18 @@ describes how they are made.
 
 ## [Unreleased]
 
+### Added
+
+- Live TV plays HEVC and 10-bit channels as sent where the TV decodes
+  them, and shows how a channel plays as a video does.
+
+## [0.1.15] - 2026-11-25
+
+### Fixed
+
+- A Live TV channel played as it is plays on after a few seconds when its
+  provider's stream starts over.
+
 ## [0.1.14] - 2026-11-24
 
 ### Changed
@@ -518,7 +530,8 @@ describes how they are made.
 - First release with a version of its own (builds before it carried 0.2.0,
   the version every app shared).
 
-[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-24...HEAD
+[Unreleased]: https://github.com/pley-media-server/pley/compare/release-2026-11-25...HEAD
+[0.1.15]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-25
 [0.1.14]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-24
 [0.1.13]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-22
 [0.1.12]: https://github.com/pley-media-server/pley/releases/tag/release-2026-11-20
