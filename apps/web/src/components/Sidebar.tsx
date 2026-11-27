@@ -29,6 +29,7 @@ import { requestsBadge } from "@/lib/requests";
 import { Logo, LogoMark } from "./Logo";
 import { keepTabInside } from "./Modal";
 import { SortLibrariesModal } from "./SortLibrariesModal";
+import { LONG_DELAY_MS, useTooltip } from "./Tooltip";
 import { IconButton, Skeleton } from "./ui";
 import { discoverUrl, libraryUrl, requestsUrl } from "@/lib/urls";
 
@@ -61,36 +62,40 @@ function NavItem({
   name?: string;
 }) {
   const narrow = useContext(Narrow);
+  const { trigger, tip } = useTooltip(narrow ? (name ?? (typeof children === "string" ? children : undefined)) : undefined);
   return (
-    <NavLink
-      to={to}
-      end={end}
-      title={narrow ? (name ?? (typeof children === "string" ? children : undefined)) : undefined}
-      className={({ isActive }) =>
-        cn(
-          "group relative flex h-8 items-center gap-2.5 rounded-md text-sm font-medium transition-colors duration-150",
-          narrow ? "justify-center" : "px-3",
-          isActive ? "bg-white/[0.07] text-fg" : "text-muted hover:bg-white/[0.04] hover:text-fg",
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          {isActive ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-accent" /> : null}
-          <span className={cn("transition-colors", isActive ? "text-accent" : "text-subtle group-hover:text-muted")}>{icon}</span>
-          <span className={narrow ? "sr-only" : "min-w-0 flex-1 truncate"}>{children}</span>
-          {/* Narrow, a badge or spinner sits on the icon's corner. */}
-          {trailing && narrow ? (
-            <>
-              {" "}
-              <span className="absolute left-1/2 top-0 ml-0.5 flex origin-top-left scale-75">{trailing}</span>
-            </>
-          ) : (
-            trailing
-          )}
-        </>
-      )}
-    </NavLink>
+    <>
+      <NavLink
+        {...trigger}
+        to={to}
+        end={end}
+        className={({ isActive }) =>
+          cn(
+            "group relative flex h-8 items-center gap-2.5 rounded-md text-sm font-medium transition-colors duration-150",
+            narrow ? "justify-center" : "px-3",
+            isActive ? "bg-white/[0.07] text-fg" : "text-muted hover:bg-white/[0.04] hover:text-fg",
+          )
+        }
+      >
+        {({ isActive }) => (
+          <>
+            {isActive ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-accent" /> : null}
+            <span className={cn("transition-colors", isActive ? "text-accent" : "text-subtle group-hover:text-muted")}>{icon}</span>
+            <span className={narrow ? "sr-only" : "min-w-0 flex-1 truncate"}>{children}</span>
+            {/* Narrow, a badge or spinner sits on the icon's corner. */}
+            {trailing && narrow ? (
+              <>
+                {" "}
+                <span className="absolute left-1/2 top-0 ml-0.5 flex origin-top-left scale-75">{trailing}</span>
+              </>
+            ) : (
+              trailing
+            )}
+          </>
+        )}
+      </NavLink>
+      {tip}
+    </>
   );
 }
 
@@ -110,6 +115,13 @@ function SidebarContent({
   const [sorting, setSorting] = useState(false);
   // Shown once it has channels; administrators set it up in Settings.
   const showLive = live.data?.available ?? false;
+  const canSort = !collapsed && (libs.data?.length ?? 0) > 1;
+  const canAdd = !!libs.data && libs.data.length === 0 && user.is_admin;
+  // Each tip only while its control shows, so one can't stay up after its control goes.
+  const sortTip = useTooltip(canSort ? t("sidebar.sortLibraries") : undefined, { delayMs: LONG_DELAY_MS });
+  const addTip = useTooltip(collapsed && canAdd ? t("sidebar.addLibrary") : undefined);
+  const toggleLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
+  const toggleTip = useTooltip(onToggle ? toggleLabel : undefined, { delayMs: LONG_DELAY_MS });
 
   return (
     <Narrow.Provider value={collapsed}>
@@ -117,24 +129,13 @@ function SidebarContent({
         className={cn("flex h-full flex-col overflow-y-auto overflow-x-hidden pb-4 pt-4", collapsed ? "px-2" : "px-3")}
         aria-label={t("sidebar.main")}
       >
-        {/* Narrow, the button to widen it sits under the mark, as the two don't fit side by side. */}
-        <div className={cn("mb-5 flex items-center", collapsed ? "flex-col gap-2" : "justify-between pl-2 pr-1")}>
-          <Link to="/" aria-label={t("sidebar.pleyHome")} className="flex">
-            {collapsed ? <LogoMark className="size-8" /> : <Logo />}
+        <div className={cn("mb-5 flex items-center", collapsed ? "justify-center" : "justify-between px-2")}>
+          <Link to="/" aria-label={t("sidebar.pleyHome")}>
+            {collapsed ? <LogoMark className="size-7" /> : <Logo />}
           </Link>
           {onClose ? (
             <IconButton label={t("sidebar.closeMenu")} size="sm" onClick={onClose}>
               <X className="size-4" />
-            </IconButton>
-          ) : onToggle ? (
-            <IconButton
-              label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-              size="xs"
-              className="text-subtle"
-              aria-expanded={!collapsed}
-              onClick={onToggle}
-            >
-              {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
             </IconButton>
           ) : null}
         </div>
@@ -157,10 +158,21 @@ function SidebarContent({
         ) : (
           <div className="mb-0.5 mt-4 flex h-7 items-center justify-between pl-3 pr-1 text-xs font-medium text-subtle">
             {t("sidebar.libraries")}
-            {(libs.data?.length ?? 0) > 1 ? (
-              <IconButton label={t("sidebar.sortLibraries")} size="xs" className="text-subtle" onClick={() => setSorting(true)}>
-                <ArrowUpDown className="size-3.5" />
-              </IconButton>
+            {canSort ? (
+              <>
+                <IconButton
+                  {...sortTip.trigger}
+                  label={t("sidebar.sortLibraries")}
+                  // The tip names it, not the browser's.
+                  title={undefined}
+                  size="xs"
+                  className="text-subtle"
+                  onClick={() => setSorting(true)}
+                >
+                  <ArrowUpDown className="size-3.5" />
+                </IconButton>
+                {sortTip.tip}
+              </>
             ) : null}
           </div>
         )}
@@ -190,17 +202,20 @@ function SidebarContent({
           ) : null}
           {libs.data && libs.data.length === 0 ? (
             user.is_admin ? (
-              <Link
-                to="/settings/libraries?add=1"
-                title={collapsed ? t("sidebar.addLibrary") : undefined}
-                className={cn(
-                  "flex h-8 items-center gap-2.5 rounded-md text-sm text-muted transition-colors hover:bg-white/[0.04] hover:text-fg",
-                  collapsed ? "justify-center" : "px-3",
-                )}
-              >
-                <Plus className="size-4 text-subtle" />
-                <span className={collapsed ? "sr-only" : undefined}>{t("sidebar.addLibrary")}</span>
-              </Link>
+              <>
+                <Link
+                  {...addTip.trigger}
+                  to="/settings/libraries?add=1"
+                  className={cn(
+                    "flex h-8 items-center gap-2.5 rounded-md text-sm text-muted transition-colors hover:bg-white/[0.04] hover:text-fg",
+                    collapsed ? "justify-center" : "px-3",
+                  )}
+                >
+                  <Plus className="size-4 text-subtle" />
+                  <span className={collapsed ? "sr-only" : undefined}>{t("sidebar.addLibrary")}</span>
+                </Link>
+                {addTip.tip}
+              </>
             ) : collapsed ? null : (
               <p className="px-3 py-2 text-xs text-subtle">{t("sidebar.noLibraries")}</p>
             )
@@ -209,11 +224,37 @@ function SidebarContent({
 
         <div className="flex-1" />
 
-        {user.is_admin ? (
-          <div className="mt-4 space-y-0.5">
-            <NavItem to="/settings" icon={<Settings className="size-4" />}>
-              {t("sidebar.settings")}
-            </NavItem>
+        {user.is_admin || onToggle ? (
+          // Settings shares its row with the button that narrows the sidebar; narrow, the button sits under it.
+          <div className={cn("mt-4 flex", collapsed ? "flex-col gap-0.5" : "items-center justify-end gap-1")}>
+            {user.is_admin ? (
+              <div className={collapsed ? undefined : "min-w-0 flex-1"}>
+                <NavItem to="/settings" icon={<Settings className="size-4" />}>
+                  {t("sidebar.settings")}
+                </NavItem>
+              </div>
+            ) : null}
+            {onToggle ? (
+              <>
+                <IconButton
+                  {...toggleTip.trigger}
+                  label={toggleLabel}
+                  // The tip names it, not the browser's.
+                  title={undefined}
+                  size="xs"
+                  // Wide, it keeps out of the way until the pointer or the keyboard comes to it.
+                  className={cn(
+                    "text-subtle",
+                    collapsed ? "self-center" : "mr-1 opacity-50 hover:opacity-100 focus-visible:opacity-100",
+                  )}
+                  aria-expanded={!collapsed}
+                  onClick={onToggle}
+                >
+                  {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-3.5" />}
+                </IconButton>
+                {toggleTip.tip}
+              </>
+            ) : null}
           </div>
         ) : null}
       </nav>
