@@ -12,6 +12,8 @@ describes how they are made.
 
 - Live TV plays HEVC and 10-bit channels as the provider sends them when
   the computer decodes them, and has Playback details.
+- The sidebar can be narrowed to its icons by the button beside the logo,
+  and stays as it was left.
 
 ## [0.1.9] - 2026-11-25
 

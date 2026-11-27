@@ -14,8 +14,8 @@ describes how they are made.
 - Live TV plays a channel as the provider sends it when the device decodes
   it (HEVC and 10-bit included), and transcodes only for players that need it.
 - Playback details in the web app's Live TV player.
-- The web app's sidebar can be narrowed to its icons, with Collapse sidebar at
-  its foot; each browser remembers how it was left.
+- The web app's sidebar can be narrowed to its icons by the button beside the
+  logo; each browser remembers how it was left.
 
 ## [0.1.17] - 2026-11-25
 

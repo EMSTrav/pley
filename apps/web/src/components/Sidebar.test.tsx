@@ -148,6 +148,10 @@ describe("Sidebar narrowed", () => {
     expect(await within(nav).findByRole("link", { name: "TV Shows" })).not.toHaveAttribute("title");
     expect(within(nav).getByText("Libraries")).toBeInTheDocument();
 
+    // An icon, named for screen readers and on hover, not written.
+    expect(within(nav).getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute("title", "Collapse sidebar");
+    expect(within(nav).queryByText("Collapse sidebar")).not.toBeInTheDocument();
+
     await user.click(within(nav).getByRole("button", { name: "Collapse sidebar" }));
     // Still read out by name, and shown on hover.
     const library = within(nav).getByRole("link", { name: "TV Shows" });

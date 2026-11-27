@@ -83,7 +83,7 @@ function NavItem({
           {trailing && narrow ? (
             <>
               {" "}
-              <span className="absolute -right-0.5 -top-0.5 flex origin-top-right scale-75">{trailing}</span>
+              <span className="absolute left-1/2 top-0 ml-0.5 flex origin-top-left scale-75">{trailing}</span>
             </>
           ) : (
             trailing
@@ -117,13 +117,24 @@ function SidebarContent({
         className={cn("flex h-full flex-col overflow-y-auto overflow-x-hidden pb-4 pt-4", collapsed ? "px-2" : "px-3")}
         aria-label={t("sidebar.main")}
       >
-        <div className={cn("mb-5 flex items-center", collapsed ? "justify-center" : "justify-between px-2")}>
-          <Link to="/" aria-label={t("sidebar.pleyHome")}>
-            {collapsed ? <LogoMark className="size-7" /> : <Logo />}
+        {/* Narrow, the button to widen it sits under the mark, as the two don't fit side by side. */}
+        <div className={cn("mb-5 flex items-center", collapsed ? "flex-col gap-2" : "justify-between pl-2 pr-1")}>
+          <Link to="/" aria-label={t("sidebar.pleyHome")} className="flex">
+            {collapsed ? <LogoMark className="size-8" /> : <Logo />}
           </Link>
           {onClose ? (
             <IconButton label={t("sidebar.closeMenu")} size="sm" onClick={onClose}>
               <X className="size-4" />
+            </IconButton>
+          ) : onToggle ? (
+            <IconButton
+              label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+              size="xs"
+              className="text-subtle"
+              aria-expanded={!collapsed}
+              onClick={onToggle}
+            >
+              {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
             </IconButton>
           ) : null}
         </div>
@@ -204,21 +215,6 @@ function SidebarContent({
               {t("sidebar.settings")}
             </NavItem>
           </div>
-        ) : null}
-        {onToggle ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={!collapsed}
-            title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-            className={cn(
-              "mt-0.5 flex h-8 items-center gap-2.5 rounded-md text-sm font-medium text-muted transition-colors hover:bg-white/[0.04] hover:text-fg",
-              collapsed ? "justify-center" : "px-3",
-            )}
-          >
-            {collapsed ? <PanelLeftOpen className="size-4 text-subtle" /> : <PanelLeftClose className="size-4 text-subtle" />}
-            <span className={collapsed ? "sr-only" : undefined}>{collapsed ? t("sidebar.expand") : t("sidebar.collapse")}</span>
-          </button>
         ) : null}
       </nav>
     </Narrow.Provider>
