@@ -153,8 +153,10 @@ function SidebarContent({
         </div>
 
         {collapsed ? (
-          // Narrow, a line parts the libraries from what's above.
-          <div className="mx-2 mb-2 mt-4 border-t border-border" role="separator" />
+          // Narrow, a line parts the libraries from what's above; screen readers still hear their heading.
+          <div className="mx-2 mb-2 mt-4 border-t border-border">
+            <span className="sr-only">{t("sidebar.libraries")}</span>
+          </div>
         ) : (
           <div className="mb-0.5 mt-4 flex h-7 items-center justify-between pl-3 pr-1 text-xs font-medium text-subtle">
             {t("sidebar.libraries")}
@@ -216,8 +218,8 @@ function SidebarContent({
                 </Link>
                 {addTip.tip}
               </>
-            ) : collapsed ? null : (
-              <p className="px-3 py-2 text-xs text-subtle">{t("sidebar.noLibraries")}</p>
+            ) : (
+              <p className={collapsed ? "sr-only" : "px-3 py-2 text-xs text-subtle"}>{t("sidebar.noLibraries")}</p>
             )
           ) : null}
         </div>
@@ -353,7 +355,7 @@ export function Sidebar({
     <>
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden border-r border-border bg-surface transition-[width] duration-200 lg:block",
+          "fixed inset-y-0 left-0 z-30 hidden border-r border-border bg-surface transition-[width] duration-200 motion-reduce:transition-none lg:block",
           collapsed ? "w-16" : "w-60",
         )}
       >

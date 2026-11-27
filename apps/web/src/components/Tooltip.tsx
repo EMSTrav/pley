@@ -7,8 +7,8 @@ export type TooltipSide = "right" | "bottom";
 
 /** What the trigger takes to show and hide its tip. */
 export interface TooltipTrigger {
-  onMouseEnter?: (e: { currentTarget: HTMLElement }) => void;
-  onMouseLeave?: () => void;
+  onPointerEnter?: (e: { currentTarget: HTMLElement; pointerType: string }) => void;
+  onPointerLeave?: () => void;
   onFocus?: (e: { currentTarget: HTMLElement }) => void;
   onBlur?: () => void;
   onPointerDownCapture?: () => void;
@@ -38,11 +38,11 @@ function byKeyboard(el: HTMLElement): boolean {
 }
 
 /**
- * An icon's name, drawn beside it on hover or keyboard focus, for icons whose
- * name isn't written. The trigger takes `trigger`'s handlers, and `tip` is
- * rendered beside it. Screen readers already have the name from the
- * trigger's label, so the tip is hidden from them. Escape, a press, a key
- * that acts or a scroll closes it. No `text`, no tip.
+ * An icon's name, drawn beside it on a mouse's hover or keyboard focus, for
+ * icons whose name isn't written. The trigger takes `trigger`'s handlers, and
+ * `tip` is rendered beside it. Screen readers already have the name from the
+ * trigger's label, so the tip is hidden from them. Escape, a press or a key
+ * that acts closes it. No `text`, no tip.
  */
 export function useTooltip(
   text: string | undefined,
@@ -51,22 +51,27 @@ export function useTooltip(
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [open, setOpen] = useState(false);
   const isOpen = useRef(false);
+  const target = useRef<HTMLElement | null>(null);
   const showing = useRef<number | undefined>(undefined);
   const going = useRef<number | undefined>(undefined);
   const tipRef = useRef<HTMLDivElement>(null);
   const arrowRef = useRef<HTMLSpanElement>(null);
 
-  const show = useCallback((el: HTMLElement, now: boolean) => {
-    window.clearTimeout(showing.current);
-    const place = () => {
-      window.clearTimeout(going.current);
-      setAnchor(el.getBoundingClientRect());
-      isOpen.current = true;
-      setOpen(true);
-    };
-    if (now || (delayMs <= DELAY_MS && Date.now() - lastOpen < WARM_MS)) place();
-    else showing.current = window.setTimeout(place, delayMs);
-  }, [delayMs]);
+  const show = useCallback(
+    (el: HTMLElement, now: boolean) => {
+      window.clearTimeout(showing.current);
+      const place = () => {
+        window.clearTimeout(going.current);
+        target.current = el;
+        setAnchor(el.getBoundingClientRect());
+        isOpen.current = true;
+        setOpen(true);
+      };
+      if (now || (delayMs <= DELAY_MS && Date.now() - lastOpen < WARM_MS)) place();
+      else showing.current = window.setTimeout(place, delayMs);
+    },
+    [delayMs],
+  );
 
   const hide = useCallback(() => {
     window.clearTimeout(showing.current);
@@ -78,23 +83,34 @@ export function useTooltip(
     going.current = window.setTimeout(() => setAnchor(null), FADE_MS);
   }, []);
 
+  const drop = useCallback(() => {
+    window.clearTimeout(going.current);
+    setAnchor(null);
+  }, []);
+
   useEffect(() => {
     if (!text) hide();
-  }, [text, hide]);
+    // A fading tip whose words changed (Collapse became Expand) would say them where its trigger was.
+    else if (!isOpen.current) drop();
+  }, [text, hide, drop]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") hide();
     };
+    // Measured again when something moves its trigger: Tab scrolls the rail to the icon it reaches.
+    const follow = () => {
+      if (target.current?.isConnected) setAnchor(target.current.getBoundingClientRect());
+      else hide();
+    };
     document.addEventListener("keydown", onKey);
-    // Its place was measured once: anything that moves the trigger closes it.
-    window.addEventListener("scroll", hide, true);
-    window.addEventListener("resize", hide);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
     return () => {
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", hide, true);
-      window.removeEventListener("resize", hide);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
     };
   }, [open, hide]);
 
@@ -125,8 +141,11 @@ export function useTooltip(
 
   const trigger: TooltipTrigger = text
     ? {
-        onMouseEnter: (e) => show(e.currentTarget, false),
-        onMouseLeave: hide,
+        // A mouse only: a touch has no hover to end it, so its tip would come up after the tap and stay.
+        onPointerEnter: (e) => {
+          if (e.pointerType === "mouse") show(e.currentTarget, false);
+        },
+        onPointerLeave: hide,
         onFocus: (e) => {
           if (byKeyboard(e.currentTarget)) show(e.currentTarget, true);
         },

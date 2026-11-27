@@ -37,7 +37,7 @@ export function AppLayout() {
     >
       <ImportTabTitle />
       <Sidebar open={drawer} onClose={closeDrawer} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-      <div className="flex min-h-screen flex-col transition-[padding] duration-200 lg:pl-[var(--sidebar-width)]">
+      <div className="flex min-h-screen flex-col transition-[padding] duration-200 motion-reduce:transition-none lg:pl-[var(--sidebar-width)]">
         <TopBar onMenu={() => setDrawer(true)} />
         <ConnectionBanner />
         <main className={cn("flex-1", audio.current && "pb-24")}>

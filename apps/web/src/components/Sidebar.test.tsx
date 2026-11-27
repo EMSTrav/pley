@@ -141,7 +141,7 @@ describe("Sidebar narrowed", () => {
   }
 
   /** The tip with these words: hidden from screen readers, which have the names already. */
-  const tip = (text: string) => screen.findByText(text, { selector: '[role="tooltip"]' }, { timeout: 2000 });
+  const tip = (text: string) => screen.findByText(text, { selector: '[role="tooltip"]' });
 
   it("narrows to its icons, each still named, and widens again", async () => {
     mockApi({ "GET /api/libraries": () => [shows] });
@@ -166,7 +166,8 @@ describe("Sidebar narrowed", () => {
     expect(await tip("TV Shows")).toBeInTheDocument();
     await user.hover(within(nav).getByRole("link", { name: "Home" }));
     expect(await tip("Home")).toBeInTheDocument();
-    expect(within(nav).queryByText("Libraries")).not.toBeInTheDocument();
+    // The heading is a line now, still read out.
+    expect(within(nav).getByText("Libraries")).toHaveClass("sr-only");
     const expand = within(nav).getByRole("button", { name: "Expand sidebar" });
     expect(expand).toHaveAttribute("aria-expanded", "false");
 
@@ -194,7 +195,7 @@ describe("Sidebar narrowed", () => {
     const sort = screen.getByRole("button", { name: "Sort libraries" });
     expect(sort).not.toHaveAttribute("title");
     await user.hover(sort);
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 300));
     expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
     expect(await tip("Sort libraries")).toBeInTheDocument();
   });
